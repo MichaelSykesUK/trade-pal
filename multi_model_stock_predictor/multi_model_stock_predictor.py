@@ -26,7 +26,7 @@ class StockPredictionModel:
         ma1,
         ma2,
         ema1,
-        arima_order
+        arima_order,
     ):
         """Initialize the StockPredictionModel with parameters and load data."""
         self.ticker = ticker
@@ -45,7 +45,8 @@ class StockPredictionModel:
         self.ma1 = ma1
         self.ma2 = ma2
         self.ema1 = ema1
-        self.feature_start = max(ma1, ma2, ema1)  # The day where all features available
+        # The day where all features available
+        self.feature_start = max(ma1, ma2, ema1)
         self.arima_order = arima_order
 
         # Load and prepare the data
@@ -65,7 +66,8 @@ class StockPredictionModel:
     def load_data(self):
         """Load ticker data from Yahoo Finance."""
         try:
-            data = yf.download(self.ticker, period=self.period, interval=self.interval)
+            data = yf.download(
+                self.ticker, period=self.period, interval=self.interval)
 
             # Extract relevant multiindex columns for the specific ticker
             prices = data[("Close", self.ticker)]
@@ -84,10 +86,14 @@ class StockPredictionModel:
         self.ema50 = self.compute_ema(self.real_prices, window=self.ema1)
         self.momentum = self.compute_momentum(self.real_prices, window=50)
         self.rsi = self.compute_rsi(self.real_prices)
-        self.upper_band, self.lower_band = self.compute_bollinger_bands(self.real_prices)
+        self.upper_band, self.lower_band = self.compute_bollinger_bands(
+            self.real_prices
+        )
         self.volatility = self.compute_volatility(self.real_prices)
         self.macd, self.macd_signal = self.compute_macd(self.real_prices)
-        self.atr = self.compute_atr(self.real_high_prices, self.real_low_prices, self.real_prices)
+        self.atr = self.compute_atr(
+            self.real_high_prices, self.real_low_prices, self.real_prices
+        )
         self.obv = self.compute_obv(self.real_prices, self.real_volumes)
 
     def compute_rsi(self, prices, window=14):
@@ -144,8 +150,12 @@ class StockPredictionModel:
         tr = np.maximum(
             high_prices_a[1:] - low_prices_a[1:],  # High-Low range
             np.maximum(
-                np.abs(high_prices_a[1:] - close_prices_a[:-1]),  # Current high to previous close
-                np.abs(low_prices_a[1:] - close_prices_a[:-1]),   # Current low to previous close
+                np.abs(
+                    high_prices_a[1:] - close_prices_a[:-1]
+                ),  # Current high to previous close
+                np.abs(
+                    low_prices_a[1:] - close_prices_a[:-1]
+                ),  # Current low to previous close
             ),
         )
 
@@ -156,19 +166,25 @@ class StockPredictionModel:
         tr_series = pd.Series(tr, index=close_prices.index)
 
         # Apply rolling mean
-        atr = tr_series.rolling(window=window).mean()  # starts at 15h value because of nan at tr[0]
+        atr = tr_series.rolling(
+            window=window
+        ).mean()  # starts at 15h value because of nan at tr[0]
 
         # Ensure ATR is aligned with the original close_prices (offset by window size)
         atr = atr.reindex_like(close_prices)
 
         # Length checks: raise an error if there are any mismatches
         if len(close_prices) != len(tr) or len(tr) != len(atr):
-            raise ValueError(f"Length mismatch: close_prices({
-                             len(close_prices)}), tr({len(tr)}), atr({len(atr)})")
+            raise ValueError(
+                f"Length mismatch: close_prices({
+                    len(close_prices)}), tr({len(tr)}), atr({len(atr)})"
+            )
 
         if len(high_prices) != len(low_prices) or len(high_prices) != len(close_prices):
-            raise ValueError(f"Length mismatch between high_prices({len(high_prices)}), low_prices({
-                             len(low_prices)}), and close_prices({len(close_prices)})")
+            raise ValueError(
+                f"Length mismatch between high_prices({len(high_prices)}), low_prices({
+                    len(low_prices)}), and close_prices({len(close_prices)})"
+            )
 
         return atr
 
@@ -176,13 +192,16 @@ class StockPredictionModel:
         """Compute the On-Balance Volume (OBV)."""
         obv = [0]  # Initialize OBV list with the first value set to 0
         for i in range(1, len(prices)):
-            if prices.iloc[i] > prices.iloc[i - 1]:  # Use .iloc for position-based indexing
+            if (
+                prices.iloc[i] > prices.iloc[i - 1]
+            ):  # Use .iloc for position-based indexing
                 obv.append(obv[-1] + volumes.iloc[i])
             elif prices.iloc[i] < prices.iloc[i - 1]:
                 obv.append(obv[-1] - volumes.iloc[i])
             else:
                 obv.append(obv[-1])
-        return pd.Series(obv, index=prices.index)  # Align OBV with the prices index
+        # Align OBV with the prices index
+        return pd.Series(obv, index=prices.index)
 
     def evaluate_features(
         self,
@@ -226,7 +245,8 @@ class StockPredictionModel:
         computed_features = {name: func() for name, func in features.items()}
 
         # Validate feature lengths
-        lengths = {name: len(values) for name, values in computed_features.items()}
+        lengths = {name: len(values)
+                   for name, values in computed_features.items()}
         expected_length = next(iter(lengths.values()))
 
         mismatches = [
@@ -235,7 +255,8 @@ class StockPredictionModel:
             if length != expected_length
         ]
         if mismatches:
-            raise ValueError(f"⚠️ Length mismatches found: {', '.join(mismatches)}")
+            raise ValueError(f"⚠️ Length mismatches found: {
+                             ', '.join(mismatches)}")
 
         return computed_features
 
@@ -300,6 +321,7 @@ class StockPredictionModel:
         print(f"Model: {self.model}")
         if self.model_type == "ARIMA":
             from statsmodels.tsa.arima.model import ARIMA
+
             print("Training ARIMA model...")
             # Example order, tune as needed
             self.model = ARIMA(self.real_prices, order=self.arima_order)
@@ -313,28 +335,42 @@ class StockPredictionModel:
         self.X = X
         self.X_weighted = X_weighted
 
-    def update_projected_data(self, prices, high_prices, low_prices, volumes, prediction):
+    def update_projected_data(
+        self, prices, high_prices, low_prices, volumes, prediction
+    ):
         """
         Update projected data based on the new prediction.
         """
-        volumes = pd.concat([volumes, pd.Series([volumes.iloc[-1]])], ignore_index=True)
+        volumes = pd.concat(
+            [volumes, pd.Series([volumes.iloc[-1]])], ignore_index=True)
         high_prices = pd.concat(
-            [high_prices, pd.Series([prediction + (high_prices.iloc[-1] - prices.iloc[-1])])],
+            [
+                high_prices,
+                pd.Series(
+                    [prediction + (high_prices.iloc[-1] - prices.iloc[-1])]),
+            ],
             ignore_index=True,
         )
         low_prices = pd.concat(
-            [low_prices, pd.Series([prediction - (prices.iloc[-1] - low_prices.iloc[-1])])],
+            [
+                low_prices,
+                pd.Series(
+                    [prediction - (prices.iloc[-1] - low_prices.iloc[-1])]),
+            ],
             ignore_index=True,
         )
-        prices = pd.concat([prices, pd.Series([prediction])], ignore_index=True)
+        prices = pd.concat(
+            [prices, pd.Series([prediction])], ignore_index=True)
         return prices, high_prices, low_prices, volumes
 
     def recalculate_features(self, prices, high_prices, low_prices, volumes):
         """
         Recalculate features dynamically for the given data.
         """
-        features = self.evaluate_features(prices, high_prices, low_prices, volumes)
-        feature_vector = np.array([values.iloc[-1] for values in features.values()])
+        features = self.evaluate_features(
+            prices, high_prices, low_prices, volumes)
+        feature_vector = np.array([values.iloc[-1]
+                                  for values in features.values()])
         return feature_vector
 
     def weight_last_feature(self, list, last_feature_vector):
@@ -361,7 +397,17 @@ class StockPredictionModel:
 
         return last_feature_vector
 
-    def iterate_forwards(self, prices, high_prices, low_prices, volumes, X_list, last_feature_vector, days, name):
+    def iterate_forwards(
+        self,
+        prices,
+        high_prices,
+        low_prices,
+        volumes,
+        X_list,
+        last_feature_vector,
+        days,
+        name,
+    ):
         """
         Iteratively project prices for a given number of days (`pre_days`).
 
@@ -376,11 +422,14 @@ class StockPredictionModel:
 
             if self.model_type == "ARIMA":
                 from statsmodels.tsa.arima.model import ARIMA
+
                 prediction = self.model.forecast(steps=1).iloc[0]
                 print(f"ARIMA forecast output: {prediction}")
                 results.append(prediction)
                 # prices = prices.append(pd.Series([prediction], index=[len(prices)]))
-                prices = pd.concat([prices, pd.Series([prediction], index=[len(prices)])])
+                prices = pd.concat(
+                    [prices, pd.Series([prediction], index=[len(prices)])]
+                )
                 self.model = ARIMA(prices, order=self.arima_order).fit()
             else:
                 prediction = self.model.predict([last_feature_vector])[0]
@@ -397,15 +446,22 @@ class StockPredictionModel:
 
                 # Recalculate features
                 next_feature_vector = self.recalculate_features(
-                    prices, high_prices, low_prices, volumes)
+                    prices, high_prices, low_prices, volumes
+                )
 
                 # Scale and weight features
-                next_feature_vector = self.weight_last_feature(X_list, next_feature_vector)
+                next_feature_vector = self.weight_last_feature(
+                    X_list, next_feature_vector
+                )
                 last_feature_vector = next_feature_vector
 
                 # Store results
-                row = {f"{name} Iteration": i, "Predicted_Price": prediction,
-                       "Last Feature Vector": last_feature_vector, "New Feature Vector": next_feature_vector}
+                row = {
+                    f"{name} Iteration": i,
+                    "Predicted_Price": prediction,
+                    "Last Feature Vector": last_feature_vector,
+                    "New Feature Vector": next_feature_vector,
+                }
 
                 results.append(row)
 
@@ -436,7 +492,15 @@ class StockPredictionModel:
         name = "Projected"
 
         prices = self.iterate_forwards(
-            prices, high_prices, low_prices, volumes, X_list, last_feature_vector, days, name)
+            prices,
+            high_prices,
+            low_prices,
+            volumes,
+            X_list,
+            last_feature_vector,
+            days,
+            name,
+        )
 
         return prices
 
@@ -447,19 +511,29 @@ class StockPredictionModel:
             pd.Series: Test prices for the specified number of days.
         """
         # Initialize
-        prices = self.real_prices[:self.start].copy()
-        high_prices = self.real_high_prices[:self.start].copy()
-        low_prices = self.real_low_prices[:self.start].copy()
-        volumes = self.real_volumes[:self.start].copy()
+        prices = self.real_prices[: self.start].copy()
+        high_prices = self.real_high_prices[: self.start].copy()
+        low_prices = self.real_low_prices[: self.start].copy()
+        volumes = self.real_volumes[: self.start].copy()
 
         # Initialize features
-        X_list = self.X_list[:self.start - self.feature_start].copy()
-        last_feature_vector = self.X_weighted[self.start - 1 - self.feature_start + 1].copy()
+        X_list = self.X_list[: self.start - self.feature_start].copy()
+        last_feature_vector = self.X_weighted[
+            self.start - 1 - self.feature_start + 1
+        ].copy()
         days = self.test_days
         name = "Test"
 
         prices = self.iterate_forwards(
-            prices, high_prices, low_prices, volumes, X_list, last_feature_vector, days, name)
+            prices,
+            high_prices,
+            low_prices,
+            volumes,
+            X_list,
+            last_feature_vector,
+            days,
+            name,
+        )
 
         return prices
 
@@ -476,8 +550,10 @@ class StockPredictionModel:
         real_days_count = len(self.real_prices)
 
         # Define ranges
-        real_days = range(1, real_days_count + 1)  # 1-indexed days for real data
-        predicted_days = range(real_days_count, real_days_count + self.pre_days + 1)
+        # 1-indexed days for real data
+        real_days = range(1, real_days_count + 1)
+        predicted_days = range(
+            real_days_count, real_days_count + self.pre_days + 1)
         real_test_days = range(1, start + self.test_days + 1)
         test_days = range(start, start + self.test_days + 1)
 
@@ -504,7 +580,8 @@ class StockPredictionModel:
 
         # Test predictions plot (bottom-left)
         plt.subplot(2, 2, 3)
-        self._plot_test_predictions(real_test_days, test_predictions, test_days)
+        self._plot_test_predictions(
+            real_test_days, test_predictions, test_days)
         plt.title(f"{self.ticker} Test Predictions vs Actual")
 
         # Show the plots
@@ -516,8 +593,10 @@ class StockPredictionModel:
         Plot the full range of real prices and predictions.
         """
         plt.plot(real_days, self.real_prices, label="Actual Prices")
-        plt.plot(real_days, self.ma50[: len(real_days)], label="MA50", linestyle="--")
-        plt.plot(real_days, self.ma150[: len(real_days)], label="MA150", linestyle="--")
+        plt.plot(real_days, self.ma50[: len(
+            real_days)], label="MA50", linestyle="--")
+        plt.plot(real_days, self.ma150[: len(
+            real_days)], label="MA150", linestyle="--")
         plt.plot(
             predicted_days,
             predictions[len(real_days) - 1:],
@@ -535,10 +614,16 @@ class StockPredictionModel:
         Plot the zoomed-in range of real prices and predictions.
         """
         zoomed_real_days = real_days[-zoom:]
-        zoomed_predicted_days = range(len(real_days), len(real_days) + zoom + 1)
-        plt.plot(zoomed_real_days, self.real_prices[-zoom:], label="Actual Prices (Zoomed)")
-        plt.plot(zoomed_real_days, self.ma50[-zoom:], label="MA50", linestyle="--")
-        plt.plot(zoomed_real_days, self.ma150[-zoom:], label="MA150", linestyle="--")
+        zoomed_predicted_days = range(
+            len(real_days), len(real_days) + zoom + 1)
+        plt.plot(
+            zoomed_real_days, self.real_prices[-zoom:
+                                               ], label="Actual Prices (Zoomed)"
+        )
+        plt.plot(zoomed_real_days,
+                 self.ma50[-zoom:], label="MA50", linestyle="--")
+        plt.plot(zoomed_real_days,
+                 self.ma150[-zoom:], label="MA150", linestyle="--")
         plt.plot(
             zoomed_predicted_days,
             predictions[len(real_days) - 1: len(real_days) + zoom],
@@ -554,10 +639,14 @@ class StockPredictionModel:
         """
         Plot test predictions against the actual prices.
         """
-        plt.plot(real_test_days, self.real_prices[: len(real_test_days)], label="Actual Prices")
+        plt.plot(
+            real_test_days,
+            self.real_prices[: len(real_test_days)],
+            label="Actual Prices",
+        )
         plt.plot(
             test_days,
-            test_predictions[self.start-1:self.start+self.test_days+1],
+            test_predictions[self.start - 1: self.start + self.test_days + 1],
             label="Predicted Prices",
             linestyle="-",
             color="green",
@@ -624,7 +713,8 @@ def main():
             "obv": True,
         },
         "scaler_type": "standard",  # Options: "none", "standard", "minmax"
-        "model_type": "XGBoost",  # Options: "XGBoost", "RandomForest", "GBR", "LinearRegression", "ARIMA"
+        # Options: "XGBoost", "RandomForest", "GBR", "LinearRegression", "ARIMA"
+        "model_type": "XGBoost",
     }
 
     # Log configuration for debugging
