@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Stock Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Load a specific version of Lightweight Charts -->
+  <script src="https://unpkg.com/lightweight-charts@3.7.0/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+  <!-- Left Pane: Search, Popular Tickers, Watchlist -->
+  <div id="left-pane">
+    <h3>Search Ticker</h3>
+    <input type="text" id="tickerSearch" placeholder="Enter ticker..." />
+    <button id="searchButton" class="primary-btn">Search</button>
+    <ul id="popularTickers">
+      <li data-ticker="AAPL">Apple (AAPL)</li>
+      <li data-ticker="MSFT">Microsoft (MSFT)</li>
+      <li data-ticker="GOOGL">Alphabet (GOOGL)</li>
+      <li data-ticker="AMZN">Amazon (AMZN)</li>
+      <li data-ticker="TSLA">Tesla (TSLA)</li>
+    </ul>
+    <h3>Watchlist</h3>
+    <ul id="watchlistItems"></ul>
+    <button id="addWatchlistItem" class="secondary-btn">Add to Watchlist</button>
+    <hr/>
+    <button id="saveConfig" class="secondary-btn">Save Config</button>
+    <button id="loadConfig" class="secondary-btn">Load Config</button>
+  </div>
+
+  <!-- Center Pane -->
+  <div id="center-pane">
+    <!-- Top Info Bar -->
+    <div id="stockInfo">
+      <h2 id="stockName">Ticker - Company Name</h2>
+      <div id="stockPriceContainer">
+        <span id="stockPrice">0.00</span>
+        <span id="stockChange">0.00 (0.00%)</span>
+        <span id="stockDate">As of Date</span>
+      </div>
+    </div>
+
+    <!-- Main Chart Container -->
+    <div id="mainChartContainer">
+      <div id="mainChart"></div>
+    </div>
+
+    <!-- Volume Chart Container -->
+    <div id="volumeChartContainer">
+      <div id="volumeChart"></div>
+    </div>
+
+    <!-- Indicator Chart Container (for RSI, MACD, etc.) -->
+    <div id="indicatorChartContainer">
+      <div id="indicatorChart"></div>
+    </div>
+
+    <!-- Timeframe Buttons -->
+    <div id="timeframeButtons">
+      <button data-period="1D" class="timeframe-btn">1D</button>
+      <button data-period="5D" class="timeframe-btn">5D</button>
+      <button data-period="1M" class="timeframe-btn">1M</button>
+      <button data-period="6M" class="timeframe-btn">6M</button>
+      <button data-period="YTD" class="timeframe-btn">YTD</button>
+      <button data-period="1Y" class="timeframe-btn active">1Y</button>
+      <button data-period="5Y" class="timeframe-btn">5Y</button>
+      <button data-period="MAX" class="timeframe-btn">Max</button>
+    </div>
+
+    <!-- Chart Controls -->
+    <div id="chartControls">
+      <label for="chartType">Chart Type:</label>
+      <select id="chartType" class="nice-select">
+        <option value="line">Line</option>
+        <option value="area">Mountain</option>
+        <option value="candlestick" selected>Candlestick</option>
+      </select>
+
+      <!-- Price Indicators Dropdown -->
+      <div class="dropdown">
+        <button id="priceIndicatorDropdownBtn" class="nice-select">Price Indicators</button>
+        <div id="priceIndicatorDropdown" class="dropdown-content"></div>
+      </div>
+
+      <!-- Special Indicators Dropdown -->
+      <div class="dropdown">
+        <button id="specialIndicatorDropdownBtn" class="nice-select">Special Indicators</button>
+        <div id="specialIndicatorDropdown" class="dropdown-content"></div>
+      </div>
+    </div>
+
+    <!-- Stats Under the Chart -->
+    <div id="statsContainer">
+      <p>P/E Ratio: <span id="peRatio">N/A</span></p>
+      <p>52 Week High: <span id="weekHigh">N/A</span></p>
+      <p>52 Week Low: <span id="weekLow">N/A</span></p>
+      <p>Market Cap: <span id="marketCap">N/A</span></p>
+      <p>Beta: <span id="beta">N/A</span></p>
+      <p>EPS (TTM): <span id="eps">N/A</span></p>
+      <p>Dividend: <span id="dividend">N/A</span></p>
+      <p>Ex-Dividend Date: <span id="exDividendDate">N/A</span></p>
+    </div>
+  </div>
+
+  <!-- Right Pane -->
+  <div id="right-pane">
+    <h3>Additional Info / Watchlist</h3>
+    <!-- More content if needed -->
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loadingOverlay">Loading...</div>
+  
+  <!-- Main JavaScript -->
+  <script src="main.js"></script>
+</body>
+</html>
