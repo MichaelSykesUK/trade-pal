@@ -1,4 +1,3 @@
-/* Root variables for font + size */
 :root {
   --main-font: "Inter", sans-serif;
   --main-font-size: 12px;
@@ -21,6 +20,7 @@ body {
   padding: 10px;
   overflow-y: auto;
   border-right: 1px solid #ccc;
+  position: relative;
 }
 
 /* Center Pane */
@@ -39,6 +39,30 @@ body {
   border-left: 1px solid #ccc;
 }
 
+/* Search container and autocomplete */
+.search-container {
+  position: relative;
+}
+.autocomplete-suggestions {
+  position: absolute;
+  top: 36px;
+  left: 0;
+  width: 90%;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #ccc;
+  z-index: 9999;
+  display: none;
+}
+.autocomplete-suggestions .suggestion-item {
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.autocomplete-suggestions .suggestion-item:hover {
+  background-color: #eee;
+}
+
 /* Chart Containers */
 #mainChartContainer,
 #volumeChartContainer,
@@ -48,7 +72,6 @@ body {
   border: 1px solid #ccc;
   margin-bottom: 6px;
 }
-
 #mainChartContainer {
   height: 300px;
 }
@@ -58,7 +81,6 @@ body {
 #indicatorChartContainer {
   height: 150px;
 }
-
 #mainChart,
 #volumeChart,
 #indicatorChart {
@@ -82,7 +104,13 @@ body {
   color: #fff;
 }
 
-/* Dropdowns */
+/* Chart Options (Dropdowns) */
+#chartOptions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 10px 0;
+}
 .nice-select {
   padding: 4px 8px;
   border-radius: 4px;
@@ -90,43 +118,94 @@ body {
   background-color: #fff;
   font-size: var(--main-font-size);
   cursor: pointer;
-}
-
-.dropdown {
-  display: inline-block;
   position: relative;
-  margin-left: 10px;
 }
-
 .dropdown-content {
   display: none;
   position: absolute;
-  background-color: #ffffff;
-  min-width: 160px;
+  background-color: #fff;
+  min-width: 140px;
   border: 1px solid #ccc;
   z-index: 999;
-  padding: 8px;
 }
-
-.dropdown-content label {
-  display: flex;
-  align-items: center;
-  margin: 6px 0;
+.nice-select:hover .dropdown-content,
+.dropdown-content:hover {
+  display: block;
+  background-color: #f0f0f0;
+}
+.dropdown-item {
+  padding: 6px 8px;
   cursor: pointer;
 }
+.dropdown-item:hover {
+  background-color: #e0e0e0;
+}
+.dropdown-item .tick {
+  float: right;
+  color: #007aff;
+  display: none;
+}
+.dropdown-item.selected .tick {
+  display: inline;
+}
 
-.dropdown:hover .dropdown-content {
-  display: block;
+/* For indicator dropdowns, use custom checkboxes with tick marks */
+.dropdown-content label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.dropdown-content label:hover {
+  background-color: #e0e0e0;
+}
+.dropdown-content input[type="checkbox"] {
+  display: none;
+}
+.dropdown-content label .tick {
+  font-weight: bold;
+  color: #007aff;
+  display: none;
+}
+.dropdown-content label.checked .tick {
+  display: inline;
+}
+
+/* KPI Table and News */
+#kpiNewsContainer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+#kpiTableContainer {
+  width: 48%;
+}
+#newsContainer {
+  width: 48%;
+}
+#newsContainer h3 {
+  margin: 0 0 5px 0;
+}
+#newsList {
+  list-style-type: none;
+  padding-left: 0;
+}
+#newsList li {
+  margin-bottom: 8px;
+}
+#newsList li a {
+  text-decoration: none;
+  color: #007aff;
 }
 
 /* Loading Overlay */
 #loadingOverlay {
   position: fixed;
-  top: 0; 
-  left: 0;
+  top: 0; left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0,0,0,0.5);
   display: none;
   justify-content: center;
   align-items: center;
@@ -135,7 +214,7 @@ body {
   z-index: 10000;
 }
 
-/* Primary/Secondary Buttons */
+/* Buttons */
 .primary-btn, .secondary-btn {
   background-color: #007aff;
   border: none;
@@ -155,68 +234,13 @@ body {
   opacity: 0.9;
 }
 
-/* KPI Table */
-#kpiTableContainer {
-  width: 50%;
-  float: left; /* left half */
-  margin-top: 10px;
+/* Watchlist styling */
+#watchlistItems {
+  list-style-type: none;
+  padding-left: 0;
 }
-#kpiTable {
-  width: 100%;
-  border-collapse: collapse;
-}
-#kpiTable td {
-  padding: 4px;
-  vertical-align: top;
-}
-
-/* Legends */
-#mainChartLegend,
-#indicatorChartLegend {
-  font-size: var(--main-font-size);
-  background: transparent;
-  border: none;
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  z-index: 2;
-}
-
-/* Modern checkboxes/radios (no default box) */
-input[type="checkbox"],
-input[type="radio"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border: 1px solid #ccc;
-  border-radius: 2px;
-  outline: none;
+#watchlistItems li {
   cursor: pointer;
-  margin-right: 5px;
-  position: relative;
-  vertical-align: middle;
-  background: #fff;
-}
-input[type="checkbox"]:checked::before,
-input[type="radio"]:checked::before {
-  content: '✓';
-  color: #fff;
-  background-color: #007aff;
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 14px;
-  height: 14px;
-  text-align: center;
-  font-size: 12px;
-  line-height: 14px;
-}
-
-/* The row containing timeframe + chart controls */
-#timeframeChartRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid #ccc;
 }

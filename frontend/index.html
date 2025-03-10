@@ -3,54 +3,42 @@
 <head>
   <meta charset="UTF-8">
   <title>TradePal</title>
-  <!-- Favicon -->
   <link rel="icon" href="icons8-candlestick-chart-office-m-96.ico" type="image/x-icon">
-  <!-- External CSS -->
   <link rel="stylesheet" href="style.css">
-  <!-- Lightweight Charts -->
-  <script src="https://unpkg.com/lightweight-charts@3.7.0/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.0.1/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
-  <!-- Left Pane: Search, Popular Tickers, Watchlist -->
+  <!-- Left Pane: Search and Watchlist -->
   <div id="left-pane">
     <h3>Search Ticker</h3>
-    <input type="text" id="tickerSearch" placeholder="Enter ticker..." />
+    <div class="search-container">
+      <input type="text" id="tickerSearch" placeholder="Enter ticker..." />
+      <div id="tickerSuggestions" class="autocomplete-suggestions"></div>
+    </div>
     <button id="searchButton" class="primary-btn">Search</button>
-    <ul id="popularTickers">
-      <li data-ticker="AAPL">Apple (AAPL)</li>
-      <li data-ticker="MSFT">Microsoft (MSFT)</li>
-      <li data-ticker="GOOGL">Alphabet (GOOGL)</li>
-      <li data-ticker="AMZN">Amazon (AMZN)</li>
-      <li data-ticker="TSLA">Tesla (TSLA)</li>
-    </ul>
+    <!-- Watchlist -->
     <h3>Watchlist</h3>
     <ul id="watchlistItems"></ul>
     <button id="addWatchlistItem" class="secondary-btn">Add to Watchlist</button>
-    <hr/>
     <button id="saveConfig" class="secondary-btn">Save Config</button>
     <button id="loadConfig" class="secondary-btn">Load Config</button>
   </div>
 
   <!-- Center Pane -->
   <div id="center-pane">
-    <!-- Top Info Bar -->
     <div id="stockInfo">
-      <!-- Exchange & currency on top line -->
-      <div id="stockExchange">Nasdaq - USD</div>
-      <h2 id="stockName" style="margin: 4px 0;">Ticker - Company Name</h2>
+      <div id="stockExchange"></div>
+      <h2 id="stockName">Ticker - Company Name</h2>
       <div id="stockPriceContainer">
         <span id="stockPrice">0.00</span>
         <span id="stockChange">0.00 (0.00%)</span>
       </div>
-      <!-- "As of date" with "At close" placeholder -->
       <div id="stockDateContainer">
-        <span id="stockDate">As of Date (At close)</span>
+        <span id="stockDate">As of Date (Market Status)</span>
       </div>
     </div>
 
-    <!-- Timeframe + Chart Controls Row -->
     <div id="timeframeChartRow">
-      <!-- Timeframe Buttons (left) -->
       <div id="timeframeButtons">
         <button data-period="1D" class="timeframe-btn">1D</button>
         <button data-period="5D" class="timeframe-btn">5D</button>
@@ -61,108 +49,112 @@
         <button data-period="5Y" class="timeframe-btn">5Y</button>
         <button data-period="MAX" class="timeframe-btn">Max</button>
       </div>
+    </div>
 
-      <!-- Chart Controls (right) -->
-      <div id="chartControls">
-        <!-- Custom dropdown for Chart Type (radio) -->
-        <div class="dropdown">
-          <button id="chartTypeDropdownBtn" class="nice-select">Candlestick</button>
-          <div id="chartTypeDropdown" class="dropdown-content">
-            <label><input type="radio" name="chartType" value="line">Line</label>
-            <label><input type="radio" name="chartType" value="area">Mountain</label>
-            <label><input type="radio" name="chartType" value="candlestick" checked>Candlestick</label>
-          </div>
+    <!-- Chart Options: Chart Type and Indicator Dropdowns (positioned to the right above the main chart) -->
+    <div id="chartOptions">
+      <div class="dropdown">
+        <button id="chartTypeDropdownBtn" class="nice-select">Candlestick</button>
+        <div id="chartTypeDropdown" class="dropdown-content">
+          <div class="dropdown-item" data-value="line">Line <span class="tick"></span></div>
+          <div class="dropdown-item" data-value="area">Mountain <span class="tick"></span></div>
+          <div class="dropdown-item" data-value="candlestick">Candlestick <span class="tick"></span></div>
         </div>
-
-        <!-- Price Indicators -->
-        <div class="dropdown">
-          <button id="priceIndicatorDropdownBtn" class="nice-select">Price Indicators</button>
-          <div id="priceIndicatorDropdown" class="dropdown-content"></div>
-        </div>
-
-        <!-- Special Indicators -->
-        <div class="dropdown">
-          <button id="specialIndicatorDropdownBtn" class="nice-select">Special Indicators</button>
-          <div id="specialIndicatorDropdown" class="dropdown-content"></div>
-        </div>
+      </div>
+      <div class="dropdown">
+        <button id="priceIndicatorDropdownBtn" class="nice-select">Price Indicators</button>
+        <div id="priceIndicatorDropdown" class="dropdown-content"></div>
+      </div>
+      <div class="dropdown">
+        <button id="specialIndicatorDropdownBtn" class="nice-select">Special Indicators</button>
+        <div id="specialIndicatorDropdown" class="dropdown-content"></div>
       </div>
     </div>
 
-    <!-- Charts Section -->
     <div id="chartsSection">
-      <!-- Main Chart -->
       <div id="mainChartContainer">
         <div id="mainChartLegend"></div>
         <div id="mainChart"></div>
       </div>
-
-      <!-- Volume Chart -->
       <div id="volumeChartContainer">
         <div id="volumeChart"></div>
       </div>
-
-      <!-- Indicator Chart -->
       <div id="indicatorChartContainer">
         <div id="indicatorChartLegend"></div>
         <div id="indicatorChart"></div>
       </div>
     </div>
 
-    <!-- KPI Table (floated left, 50% width) -->
-    <div id="kpiTableContainer">
-      <table id="kpiTable">
-        <tbody>
-          <tr>
-            <td><strong>Open Price:</strong></td>
-            <td id="openPrice">N/A</td>
-            <td><strong>Pre-Market Price:</strong></td>
-            <td id="preMarketPrice">N/A</td>
-          </tr>
-          <tr>
-            <td><strong>P/E Ratio:</strong></td>
-            <td id="peRatio">N/A</td>
-            <td><strong>52W High:</strong></td>
-            <td id="weekHigh">N/A</td>
-          </tr>
-          <tr>
-            <td><strong>52W Low:</strong></td>
-            <td id="weekLow">N/A</td>
-            <td><strong>Market Cap:</strong></td>
-            <td id="marketCap">N/A</td>
-          </tr>
-          <tr>
-            <td><strong>Beta:</strong></td>
-            <td id="beta">N/A</td>
-            <td><strong>EPS (TTM):</strong></td>
-            <td id="eps">N/A</td>
-          </tr>
-          <tr>
-            <td><strong>Dividend:</strong></td>
-            <td id="dividend">N/A</td>
-            <td><strong>Ex-Dividend Date:</strong></td>
-            <td id="exDividendDate">N/A</td>
-          </tr>
-          <tr>
-            <td><strong>Volume:</strong></td>
-            <td id="volumeKpi">N/A</td>
-            <td><!-- more KPI if needed --></td>
-            <td><!-- placeholder --></td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- KPI Table and News Section -->
+    <div id="kpiNewsContainer">
+      <div id="kpiTableContainer">
+        <table id="kpiTable">
+          <tbody>
+            <tr>
+              <td><strong>Previous Close:</strong></td>
+              <td id="previousClose">N/A</td>
+              <td><strong>Open Price:</strong></td>
+              <td id="openPrice">N/A</td>
+            </tr>
+            <tr>
+              <td><strong>Day's Range:</strong></td>
+              <td id="daysRange">N/A</td>
+              <td><strong>52W Range:</strong></td>
+              <td id="weekRange">N/A</td>
+            </tr>
+            <tr>
+              <td><strong>52W High:</strong></td>
+              <td id="weekHigh">N/A</td>
+              <td><strong>52W Low:</strong></td>
+              <td id="weekLow">N/A</td>
+            </tr>
+            <tr>
+              <td><strong>P/E Ratio:</strong></td>
+              <td id="peRatio">N/A</td>
+              <td><strong>Market Cap:</strong></td>
+              <td id="marketCap">N/A</td>
+            </tr>
+            <tr>
+              <td><strong>Forward P/E:</strong></td>
+              <td id="forwardPE">N/A</td>
+              <td><strong>Next Earnings:</strong></td>
+              <td id="nextEarningsDate">N/A</td>
+            </tr>
+            <tr>
+              <td><strong>Beta:</strong></td>
+              <td id="beta">N/A</td>
+              <td><strong>EPS (TTM):</strong></td>
+              <td id="eps">N/A</td>
+            </tr>
+            <tr>
+              <td><strong>Dividend:</strong></td>
+              <td id="dividend">N/A</td>
+              <td><strong>Ex-Dividend Date:</strong></td>
+              <td id="exDividendDate">N/A</td>
+            </tr>
+            <tr>
+              <td><strong>Volume:</strong></td>
+              <td id="volumeKpi">N/A</td>
+              <td><strong>Avg Volume:</strong></td>
+              <td id="avgVolume">N/A</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="newsContainer">
+        <hr/>
+        <h3>Related News</h3>
+        <ul id="newsList"></ul>
+      </div>
     </div>
   </div>
 
   <!-- Right Pane -->
   <div id="right-pane">
     <h3>Additional Info / Watchlist</h3>
-    <!-- More content if needed -->
   </div>
 
-  <!-- Loading Overlay -->
   <div id="loadingOverlay">Loading...</div>
-  
-  <!-- Main JavaScript -->
   <script src="main.js"></script>
 </body>
 </html>

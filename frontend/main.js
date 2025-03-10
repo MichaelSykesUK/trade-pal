@@ -1,31 +1,44 @@
 "use strict";
+console.log("main.js loaded");
 
+// Chart containers
+const mainEl = document.getElementById("mainChart");
+const volumeEl = document.getElementById("volumeChart");
+const indicatorEl = document.getElementById("indicatorChart");
+
+// Input and button elements
+const tickerInput = document.getElementById("tickerSearch");
+const searchButton = document.getElementById("searchButton");
+
+// Suggestions element for autocomplete
+const suggestionsEl = document.getElementById("tickerSuggestions");
+
+// Watchlist container
+const watchlistEl = document.getElementById("watchlistItems");
+
+// Chart instances and data maps
 let mainChart, volumeChart, indicatorChart;
 let mainSeries, volumeSeries;
-let overlayMap = {};    // Price indicators on main chart
-let indicatorMap = {};  // Special indicators on indicator chart
+let overlayMap = {};
+let indicatorMap = {};
 
-// Distinct colors for each indicator
+// Definitions for indicator colors and dropdown options
 const INDICATOR_COLORS = {
-  // Price Indicators
-  "ma50":       "#FF0000",
-  "ma100":      "#008000",
-  "ma150":      "#0000FF",
-  "ma200":      "#FF00FF",
-  "boll_ma":    "#FF9900",
-  "boll_upper": "#AAAAAA",
-  "boll_lower": "#AAAAAA",
-
-  // Special Indicators
-  "rsi":        "#AA0000",
-  "obv":        "#0055AA",
-  "atr":        "#AA7700",
-  "macd":       "#660066",
+  "ma50": "#FF0000",
+  "ma100": "#008000",
+  "ma150": "#0000FF",
+  "ma200": "#FF00FF",
+  "boll_ma": "#FF9900",
+  "boll_upper": "#FF0000",
+  "boll_lower": "#0000FF",
+  "rsi": "#AA0000",
+  "obv": "#0055AA",
+  "atr": "#AA7700",
+  "macd": "#660066",
   "volatility": "#AA0088",
-  "momentum":   "#008888",
+  "momentum": "#008888",
 };
 
-// Price Indicators
 const PRICE_INDICATORS = [
   { label: "MA(50)", value: "ma50" },
   { label: "MA(100)", value: "ma100" },
@@ -33,8 +46,6 @@ const PRICE_INDICATORS = [
   { label: "MA(200)", value: "ma200" },
   { label: "Bollinger Bands", value: "bollinger" }
 ];
-
-// Special Indicators
 const SPECIAL_INDICATORS = [
   { label: "RSI", value: "rsi" },
   { label: "OBV", value: "obv" },
@@ -45,62 +56,57 @@ const SPECIAL_INDICATORS = [
 ];
 
 /**
- * Show/hide loading overlay
+ * Helper: Format market cap.
  */
-function showLoadingOverlay() {
-  document.getElementById("loadingOverlay").style.display = "flex";
-}
-function hideLoadingOverlay() {
-  document.getElementById("loadingOverlay").style.display = "none";
+function formatMarketCap(value) {
+  if (value >= 1e12) return (value / 1e12).toFixed(1) + "T";
+  else if (value >= 1e9) return (value / 1e9).toFixed(1) + "B";
+  else if (value >= 1e6) return (value / 1e6).toFixed(1) + "M";
+  else return value.toFixed(1);
 }
 
 /**
- * Create & sync mainChart, volumeChart, indicatorChart
+ * Show/hide loading overlay.
+ */
+function showLoadingOverlay() {
+  document.getElementById("loadingOverlay").style.display = "flex";
+  console.log("Loading overlay shown.");
+}
+function hideLoadingOverlay() {
+  document.getElementById("loadingOverlay").style.display = "none";
+  console.log("Loading overlay hidden.");
+}
+
+/**
+ * Create and sync charts.
  */
 function initCharts() {
-  const mainEl = document.getElementById("mainChart");
+  const PRICE_SCALE_WIDTH = 60;
+  console.log("Initializing charts...");
   mainChart = LightweightCharts.createChart(mainEl, {
     width: mainEl.clientWidth,
     height: mainEl.clientHeight,
     layout: { backgroundColor: "#fff", textColor: "#333" },
     grid: { vertLines: { color: "#eee" }, horzLines: { color: "#eee" } },
-    timeScale: { timeVisible: true }
+    timeScale: { timeVisible: true, secondsVisible: false },
+    rightPriceScale: { borderVisible: true, borderColor: "#000", width: PRICE_SCALE_WIDTH },
   });
-  makeChartGrabbable(mainEl);
-
-  const volumeEl = document.getElementById("volumeChart");
   volumeChart = LightweightCharts.createChart(volumeEl, {
     width: volumeEl.clientWidth,
     height: volumeEl.clientHeight,
     layout: { backgroundColor: "#fff", textColor: "#333" },
     grid: { vertLines: { color: "#eee" }, horzLines: { color: "#eee" } },
-    timeScale: { timeVisible: true }
+    timeScale: { timeVisible: true, secondsVisible: false },
+    rightPriceScale: { borderVisible: true, borderColor: "#000", width: PRICE_SCALE_WIDTH },
   });
-  makeChartGrabbable(volumeEl);
-
-  // Label the volume y-axis
-  volumeChart.applyOptions({
-    rightPriceScale: {
-      visible: true,
-      borderVisible: false,
-      title: "Volume",
-    },
-    leftPriceScale: {
-      visible: false
-    }
-  });
-
-  const indEl = document.getElementById("indicatorChart");
-  indicatorChart = LightweightCharts.createChart(indEl, {
-    width: indEl.clientWidth,
-    height: indEl.clientHeight,
+  indicatorChart = LightweightCharts.createChart(indicatorEl, {
+    width: indicatorEl.clientWidth,
+    height: indicatorEl.clientHeight,
     layout: { backgroundColor: "#fff", textColor: "#333" },
     grid: { vertLines: { color: "#eee" }, horzLines: { color: "#eee" } },
-    timeScale: { timeVisible: true }
+    timeScale: { timeVisible: true, secondsVisible: false },
+    rightPriceScale: { borderVisible: true, borderColor: "#000", width: PRICE_SCALE_WIDTH },
   });
-  makeChartGrabbable(indEl);
-
-  // Sync time scale across all three
   const charts = [mainChart, volumeChart, indicatorChart];
   charts.forEach((chart, idx) => {
     chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
@@ -113,60 +119,50 @@ function initCharts() {
       }
     });
   });
+  console.log("Charts initialized.");
 }
 
 /**
- * Make chart container have "grab" cursor on drag
+ * Fix scale widths so that the volume axis aligns.
  */
-function makeChartGrabbable(container) {
-  container.style.cursor = "grab";
-  container.addEventListener("mousedown", () => {
-    container.style.cursor = "grabbing";
+function fixScaleWidths() {
+  const charts = [mainChart, volumeChart, indicatorChart];
+  const widths = charts.map(ch => ch.priceScale("right").width());
+  const maxWidth = Math.max(...widths);
+  charts.forEach(ch => {
+    ch.applyOptions({ rightPriceScale: { width: maxWidth } });
   });
-  container.addEventListener("mouseup", () => {
-    container.style.cursor = "grab";
-  });
-  container.addEventListener("mouseleave", () => {
-    container.style.cursor = "grab";
-  });
+  console.log("Fixed scale widths to", maxWidth);
 }
 
 /**
- * Render main (price) + volume data
+ * Render main and volume data.
  */
 function renderMainAndVolume(data) {
-  // Remove old charts, re-init
+  console.log("Rendering main and volume data...", data);
   if (mainChart) mainChart.remove();
   if (volumeChart) volumeChart.remove();
   if (indicatorChart) indicatorChart.remove();
-
   initCharts();
-
-  const chartType = getCurrentChartType(); // from custom dropdown
-  const dates = data.Date;
-  const open = data.Open;
-  const close = data.Close;
-  const high = data.High;
-  const low = data.Low;
-  const volume = data.Volume;
-
+  const chartType = getCurrentChartType();
+  const dates = data.Date || [];
+  const open = data.Open || [];
+  const close = data.Close || [];
+  const high = data.High || [];
+  const low = data.Low || [];
+  const volume = data.Volume || [];
   let mainData = [];
   let volumeData = [];
-
   for (let i = 0; i < dates.length; i++) {
     const t = Math.floor(new Date(dates[i]).getTime() / 1000);
-
     if (chartType === "candlestick") {
       mainData.push({ time: t, open: open[i], high: high[i], low: low[i], close: close[i] });
     } else {
       mainData.push({ time: t, value: close[i] });
     }
-
-    let barColor = (close[i] >= open[i]) ? "#26a69a" : "#ef5350";
+    const barColor = (close[i] >= open[i]) ? "#26a69a" : "#ef5350";
     volumeData.push({ time: t, value: volume[i], color: barColor });
   }
-
-  // Main chart
   if (chartType === "candlestick") {
     mainSeries = mainChart.addCandlestickSeries();
     mainSeries.setData(mainData);
@@ -177,62 +173,64 @@ function renderMainAndVolume(data) {
     mainSeries = mainChart.addLineSeries();
     mainSeries.setData(mainData);
   }
-
-  // Volume chart
   volumeSeries = volumeChart.addHistogramSeries({
     priceFormat: { type: "volume", precision: 0, minMove: 1 },
-    priceScaleId: "",
+    priceScaleId: "right",
     color: "#26a69a"
   });
   volumeSeries.setData(volumeData);
+  if (mainData.length === 0) {
+    console.warn("No main chart data available.");
+    return { firstTime: null, lastTime: null };
+  }
+  return {
+    firstTime: mainData[0].time,
+    lastTime: mainData[mainData.length - 1].time
+  };
 }
 
 /**
- * Get the current chart type from the custom dropdown (radio group)
+ * Get the current chart type from the dropdown.
  */
 function getCurrentChartType() {
-  const checked = document.querySelector('#chartTypeDropdown input[name="chartType"]:checked');
-  return checked ? checked.value : "candlestick";
+  const selectedItem = document.querySelector("#chartTypeDropdown .dropdown-item.selected");
+  return selectedItem ? selectedItem.getAttribute("data-value") : "candlestick";
 }
 
 /**
- * Fetch stock data + KPI, then re-add indicators
+ * Fetch stock data and KPI, then update charts.
  */
 function fetchStock(ticker, timeframe) {
+  console.log("Fetching stock data for:", ticker, "with timeframe:", timeframe);
   showLoadingOverlay();
   const stockUrl = `http://127.0.0.1:8000/stock/${ticker}?period=${timeframe}&interval=1d`;
   const kpiUrl = `http://127.0.0.1:8000/kpi/${ticker}`;
-
-  Promise.all([ fetch(stockUrl), fetch(kpiUrl) ])
+  Promise.all([fetch(stockUrl), fetch(kpiUrl)])
     .then(([stockRes, kpiRes]) => {
+      console.log("Responses received.");
       if (!stockRes.ok) throw new Error("Stock fetch error: " + stockRes.statusText);
       if (!kpiRes.ok) throw new Error("KPI fetch error: " + kpiRes.statusText);
       return Promise.all([stockRes.json(), kpiRes.json()]);
     })
     .then(([stockData, kpiData]) => {
       hideLoadingOverlay();
-      if (!stockData.Date || !stockData.Date.length) {
-        console.error("No stock data returned for ticker:", ticker);
-        return;
-      }
-      renderMainAndVolume(stockData);
-
-      // Clear old overlays + legends
+      console.log("Stock data:", stockData);
+      console.log("KPI data:", kpiData);
+      const { firstTime, lastTime } = renderMainAndVolume(stockData);
       overlayMap = {};
       indicatorMap = {};
       document.getElementById("mainChartLegend").innerHTML = "";
       document.getElementById("indicatorChartLegend").innerHTML = "";
-
-      // Re-add any checked indicators
-      reAddAllIndicators();
-
-      // Fit content once
-      mainChart.timeScale().fitContent();
-      volumeChart.timeScale().fitContent();
-      indicatorChart.timeScale().fitContent();
-
-      // Update top info + KPI
+      if (firstTime && lastTime) {
+        reAddAllIndicators().then(() => {
+          mainChart.timeScale().setVisibleRange({ from: firstTime, to: lastTime });
+          volumeChart.timeScale().setVisibleRange({ from: firstTime, to: lastTime });
+          indicatorChart.timeScale().setVisibleRange({ from: firstTime, to: lastTime });
+          setTimeout(() => fixScaleWidths(), 200);
+        });
+      }
       updateTopInfo(ticker, stockData, kpiData);
+      fetchNews(ticker);
     })
     .catch(err => {
       hideLoadingOverlay();
@@ -241,61 +239,41 @@ function fetchStock(ticker, timeframe) {
 }
 
 /**
- * Re-add all indicators that are checked
+ * Re-add all checked indicators.
  */
 function reAddAllIndicators() {
-  // Price
-  document.querySelectorAll("#priceIndicatorDropdown input[type=checkbox]:checked").forEach(chk => {
-    toggleIndicator(chk.value, true);
-  });
-  // Special
-  document.querySelectorAll("#specialIndicatorDropdown input[type=checkbox]:checked").forEach(chk => {
-    toggleIndicator(chk.value, true);
+  const priceChecks = document.querySelectorAll("#priceIndicatorDropdown input[type=checkbox]:checked");
+  const specialChecks = document.querySelectorAll("#specialIndicatorDropdown input[type=checkbox]:checked");
+  const pricePromises = Array.from(priceChecks).map(chk => toggleIndicator(chk.value, true));
+  const specialPromises = Array.from(specialChecks).map(chk => toggleIndicator(chk.value, true));
+  return Promise.all([...pricePromises, ...specialPromises]).then(() => {
+    setTimeout(() => fixScaleWidths(), 100);
   });
 }
 
 /**
- * Toggle an indicator on/off
+ * Toggle an indicator on/off.
  */
 function toggleIndicator(indicatorValue, isChecked) {
-  const ticker = document.getElementById("tickerSearch").value.trim();
-  if (!ticker) return;
-
+  const ticker = tickerInput.value.trim();
+  if (!ticker) return Promise.resolve();
   if (isChecked) {
-    // Capture time scale for each chart to restore after adding the line
-    const mainRange = mainChart.timeScale().getVisibleLogicalRange();
-    const volRange = volumeChart.timeScale().getVisibleLogicalRange();
-    const indRange = indicatorChart.timeScale().getVisibleLogicalRange();
-
-    fetchIndicatorData(ticker, indicatorValue)
-      .then(() => {
-        // Restore the same horizontal range (time scale)
-        if (mainRange) mainChart.timeScale().setVisibleLogicalRange(mainRange);
-        if (volRange) volumeChart.timeScale().setVisibleLogicalRange(volRange);
-        if (indRange) indicatorChart.timeScale().setVisibleLogicalRange(indRange);
-      })
-      .catch(err => console.error("Error toggling indicator:", err));
+    return fetchIndicatorData(ticker, indicatorValue);
   } else {
     removeIndicator(indicatorValue);
+    fixScaleWidths();
+    return Promise.resolve();
   }
 }
 
 /**
- * Fetch data for a specific indicator
+ * Fetch indicator data.
  */
 function fetchIndicatorData(ticker, indicatorValue) {
   return new Promise((resolve, reject) => {
-    let maParam = 50;
-    if (indicatorValue === "ma100") maParam = 100;
-    if (indicatorValue === "ma150") maParam = 150;
-    if (indicatorValue === "ma200") maParam = 200;
-
     const activeBtn = document.querySelector("#timeframeButtons .active");
-    let periodParam = activeBtn ? activeBtn.dataset.period : "1Y";
-
-    const url = `http://127.0.0.1:8000/indicators/${ticker}?period=${periodParam}&interval=1d&ma=${maParam}`;
-    console.log("Fetching indicator data:", indicatorValue, url);
-
+    const periodParam = activeBtn ? activeBtn.dataset.period : "1Y";
+    const url = `http://127.0.0.1:8000/indicators/${ticker}?period=${periodParam}&interval=1d`;
     fetch(url)
       .then(res => {
         if (!res.ok) throw new Error("Indicator fetch error: " + res.statusText);
@@ -303,6 +281,7 @@ function fetchIndicatorData(ticker, indicatorValue) {
       })
       .then(data => {
         applyIndicator(indicatorValue, data);
+        fixScaleWidths();
         resolve();
       })
       .catch(err => reject(err));
@@ -310,10 +289,10 @@ function fetchIndicatorData(ticker, indicatorValue) {
 }
 
 /**
- * Apply indicator data
+ * Apply indicator data.
  */
 function applyIndicator(indicatorValue, data) {
-  const isPrice = ["ma50","ma100","ma150","ma200","bollinger"].includes(indicatorValue);
+  const isPrice = ["ma50", "ma100", "ma150", "ma200", "bollinger"].includes(indicatorValue);
   if (isPrice) {
     applyPriceIndicator(indicatorValue, data);
   } else {
@@ -322,64 +301,68 @@ function applyIndicator(indicatorValue, data) {
 }
 
 /**
- * Apply a price indicator (MA, Bollinger) to the main chart
+ * Apply a price indicator on the main chart.
  */
 function applyPriceIndicator(indicatorValue, data) {
   if (!mainChart || !data.Date) return;
-
   if (indicatorValue.startsWith("ma")) {
-    createLineOverlayOnMainChart(indicatorValue, data.Date, data.MA);
+    const maField = "MA" + indicatorValue.replace("ma", "");
+    createLineOverlayOnMainChart(indicatorValue, data.Date, data[maField]);
   } else if (indicatorValue === "bollinger") {
-    createLineOverlayOnMainChart("boll_ma", data.Date, data.Bollinger_MA);
-    createLineOverlayOnMainChart("boll_upper", data.Date, data.Upper_Band);
-    createLineOverlayOnMainChart("boll_lower", data.Date, data.Lower_Band);
+    createLineOverlayOnMainChart("boll_ma", data.Date, data.Bollinger_MA, "#FF9900");
+    createLineOverlayOnMainChart("boll_upper", data.Date, data.Upper_Band, "#FF0000");
+    createLineOverlayOnMainChart("boll_lower", data.Date, data.Lower_Band, "#0000FF");
   }
 }
 
 /**
- * Apply a special indicator (RSI, OBV, etc.) to the indicator chart
+ * Apply a special indicator on the indicator chart.
  */
 function applySpecialIndicator(indicatorValue, data) {
   if (!indicatorChart || !data.Date) return;
-
   let field;
   switch (indicatorValue) {
-    case "rsi":        field = data.RSI;         break;
-    case "obv":        field = data.OBV;         break;
-    case "atr":        field = data.ATR;         break;
-    case "macd":       field = data.MACD;        break;
-    case "volatility": field = data.Volatility;  break;
-    case "momentum":   field = data.Momentum;    break;
+    case "rsi":        field = data.RSI; break;
+    case "obv":        field = data.OBV; break;
+    case "atr":        field = data.ATR; break;
+    case "macd":       field = data.MACD; break;
+    case "volatility": field = data.Volatility; break;
+    case "momentum":   field = data.Momentum; break;
   }
   if (!field) return;
-
   createLineOverlayOnIndicatorChart(indicatorValue, data.Date, field);
 }
 
 /**
- * Create line overlay on main chart
+ * Create a line overlay on the main chart.
  */
-function createLineOverlayOnMainChart(key, dates, values) {
+function createLineOverlayOnMainChart(key, dates, values, color) {
   let seriesData = [];
   for (let i = 0; i < dates.length; i++) {
-    const t = Math.floor(new Date(dates[i]).getTime() / 1000);
-    seriesData.push({ time: t, value: values[i] });
+    if (values[i] != null) {
+      const t = Math.floor(new Date(dates[i]).getTime() / 1000);
+      seriesData.push({ time: t, value: values[i] });
+    }
   }
-  const color = INDICATOR_COLORS[key] || "#AA0000";
-  const series = mainChart.addLineSeries({ color, lineWidth: 2 });
+  const series = mainChart.addLineSeries({
+    color: color || INDICATOR_COLORS[key] || "#AA0000",
+    lineWidth: 2
+  });
   series.setData(seriesData);
   overlayMap[key] = series;
-  addLegendItem("mainChartLegend", key, color);
+  addLegendItem("mainChartLegend", key, color || INDICATOR_COLORS[key]);
 }
 
 /**
- * Create line overlay on indicator chart
+ * Create a line overlay on the indicator chart.
  */
 function createLineOverlayOnIndicatorChart(key, dates, values) {
   let seriesData = [];
   for (let i = 0; i < dates.length; i++) {
-    const t = Math.floor(new Date(dates[i]).getTime() / 1000);
-    seriesData.push({ time: t, value: values[i] });
+    if (values[i] != null) {
+      const t = Math.floor(new Date(dates[i]).getTime() / 1000);
+      seriesData.push({ time: t, value: values[i] });
+    }
   }
   const color = INDICATOR_COLORS[key] || "#AA0000";
   const series = indicatorChart.addLineSeries({ color, lineWidth: 2 });
@@ -389,7 +372,7 @@ function createLineOverlayOnIndicatorChart(key, dates, values) {
 }
 
 /**
- * Remove an indicator
+ * Remove an indicator.
  */
 function removeIndicator(indicatorValue) {
   if (overlayMap[indicatorValue] && mainChart.removeSeries) {
@@ -403,7 +386,7 @@ function removeIndicator(indicatorValue) {
     removeLegendItem("indicatorChartLegend", indicatorValue);
   }
   if (indicatorValue === "bollinger") {
-    ["boll_ma","boll_upper","boll_lower"].forEach(k => {
+    ["boll_ma", "boll_upper", "boll_lower"].forEach(k => {
       if (overlayMap[k]) {
         mainChart.removeSeries(overlayMap[k]);
         delete overlayMap[k];
@@ -414,37 +397,31 @@ function removeIndicator(indicatorValue) {
 }
 
 /**
- * Add a legend item (small colored line + label)
+ * Add a legend item.
  */
 function addLegendItem(legendContainerId, key, color) {
   const container = document.getElementById(legendContainerId);
   if (!container) return;
-
   const item = document.createElement("span");
   item.id = `legend-item-${key}`;
   item.style.display = "inline-flex";
   item.style.alignItems = "center";
   item.style.marginRight = "8px";
-
-  // A small colored line
   const line = document.createElement("span");
   line.style.display = "inline-block";
   line.style.width = "20px";
   line.style.height = "2px";
   line.style.backgroundColor = color;
   line.style.marginRight = "5px";
-
-  // A label
   const label = document.createElement("span");
   label.textContent = key;
-
   item.appendChild(line);
   item.appendChild(label);
   container.appendChild(item);
 }
 
 /**
- * Remove a legend item
+ * Remove a legend item.
  */
 function removeLegendItem(legendContainerId, key) {
   const item = document.getElementById(`legend-item-${key}`);
@@ -452,8 +429,32 @@ function removeLegendItem(legendContainerId, key) {
 }
 
 /**
- * Update top info + KPI table
- * P/E ratio => 1 decimal, Market Cap => T/B/M w/1 decimal
+ * Format date/time.
+ */
+function formatDateTime(dateStr) {
+  const date = new Date(dateStr);
+  const options = {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true,
+    timeZone: 'America/New_York'
+  };
+  return date.toLocaleString('en-US', options);
+}
+
+/**
+ * Format number with commas.
+ */
+function formatNumberWithCommas(num) {
+  if (typeof num !== 'number' || isNaN(num)) return "N/A";
+  return num.toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+/**
+ * Update KPI table.
  */
 function updateTopInfo(ticker, data, kpiData) {
   if (!data.Date || !data.Date.length) return;
@@ -462,68 +463,184 @@ function updateTopInfo(ticker, data, kpiData) {
   const prevPrice = lastIndex > 0 ? data.Close[lastIndex - 1] : lastPrice;
   const change = lastPrice - prevPrice;
   const pct = (change / prevPrice) * 100;
-
-  // Exchange & currency
-  const exchange = kpiData.exchange || "Nasdaq";
-  const currency = kpiData.currency || "USD";
-  document.getElementById("stockExchange").textContent = `${exchange} - ${currency}`;
-
+  const exchange = kpiData.exchange || "";
+  const currency = kpiData.currency || "";
+  document.getElementById("stockExchange").textContent = exchange && currency ? `${exchange} - ${currency}` : "";
   document.getElementById("stockName").textContent = `${ticker} - ${kpiData.companyName || ""}`;
   document.getElementById("stockPrice").textContent = (lastPrice ?? 0).toFixed(2);
   document.getElementById("stockChange").textContent =
-    (change >= 0 ? '+' : '') + change.toFixed(2) + ` (${pct.toFixed(2)}%)`;
-  document.getElementById("stockDate").textContent = `As of ${data.Date[lastIndex]} (At close)`;
-
-  // Format P/E ratio to 1 decimal
+    (change >= 0 ? "+" : "") + change.toFixed(2) + ` (${pct.toFixed(2)}%)`;
+  const period = document.querySelector("#timeframeButtons .active").dataset.period.toUpperCase();
+  const latestDate = new Date(data.Date[lastIndex]);
+  const today = new Date();
+  const isToday = latestDate.toDateString() === today.toDateString();
+  const marketOpenTime = new Date(latestDate); marketOpenTime.setHours(9, 30, 0, 0);
+  const marketCloseTime = new Date(latestDate); marketCloseTime.setHours(16, 0, 0, 0);
+  let marketStatus = (period === "1D" && isToday && latestDate >= marketOpenTime && latestDate <= marketCloseTime)
+    ? "Market Open" : "At Close";
+  const formattedDate = formatDateTime(data.Date[lastIndex]);
+  document.getElementById("stockDate").textContent = `As of ${formattedDate} (${marketStatus})`;
   let pe = kpiData.peRatio;
-  if (typeof pe === "number") {
-    pe = pe.toFixed(1);
-  }
+  if (typeof pe === "number") pe = pe.toFixed(1);
   document.getElementById("peRatio").textContent = pe ?? "N/A";
-
-  // Market cap in T/B/M with 1 decimal
   let mc = kpiData.marketCap;
-  if (typeof mc === "number") {
-    mc = formatMarketCap(mc);
-  }
+  if (typeof mc === "number") mc = formatMarketCap(mc);
   document.getElementById("marketCap").textContent = mc ?? "N/A";
-
-  document.getElementById("weekHigh").textContent = kpiData.weekHigh52 ?? "N/A";
-  document.getElementById("weekLow").textContent = kpiData.weekLow52 ?? "N/A";
+  document.getElementById("weekHigh").textContent = kpiData.weekHigh52 ? kpiData.weekHigh52.toFixed(2) : "N/A";
+  document.getElementById("weekLow").textContent = kpiData.weekLow52 ? kpiData.weekLow52.toFixed(2) : "N/A";
   document.getElementById("beta").textContent = kpiData.beta ?? "N/A";
   document.getElementById("eps").textContent = kpiData.eps ?? "N/A";
   document.getElementById("dividend").textContent = kpiData.dividend ?? "N/A";
   document.getElementById("exDividendDate").textContent = kpiData.exDividendDate ?? "N/A";
-
-  // Example placeholders
-  document.getElementById("openPrice").textContent = "N/A";
-  document.getElementById("preMarketPrice").textContent = "N/A";
-
-  // Last volume
+  document.getElementById("openPrice").textContent = kpiData.openPrice ? kpiData.openPrice.toFixed(2) : "N/A";
+  document.getElementById("previousClose").textContent = kpiData.previousClose ? kpiData.previousClose.toFixed(2) : "N/A";
+  document.getElementById("daysRange").textContent = kpiData.daysRange ?? "N/A";
+  document.getElementById("weekRange").textContent = kpiData.weekRange ?? "N/A";
   const lastVolume = data.Volume[lastIndex];
-  document.getElementById("volumeKpi").textContent = lastVolume ?? "N/A";
+  document.getElementById("volumeKpi").textContent = lastVolume ? formatNumberWithCommas(lastVolume) : "N/A";
+  const avgVol = kpiData.avgVolume;
+  document.getElementById("avgVolume").textContent = avgVol ? formatNumberWithCommas(Math.round(avgVol)) : "N/A";
+
+  // New KPI fields:
+  document.getElementById("forwardPE").textContent = kpiData.forwardPE ? kpiData.forwardPE : "N/A";
+  document.getElementById("nextEarningsDate").textContent = kpiData.nextEarningsDate ? kpiData.nextEarningsDate : "N/A";
 }
 
 /**
- * Format market cap in T/B/M with 1 decimal
+ * Fetch news for the ticker.
  */
-function formatMarketCap(value) {
-  if (value >= 1e12) {
-    return (value / 1e12).toFixed(1) + "T";
-  } else if (value >= 1e9) {
-    return (value / 1e9).toFixed(1) + "B";
-  } else if (value >= 1e6) {
-    return (value / 1e6).toFixed(1) + "M";
-  } else {
-    return value.toFixed(1);
-  }
+function fetchNews(ticker) {
+  const newsUrl = `http://127.0.0.1:8000/news/${ticker}`;
+  console.log("Fetching news for", ticker);
+  fetch(newsUrl)
+    .then(res => {
+      if (!res.ok) throw new Error("News fetch error: " + res.statusText);
+      return res.json();
+    })
+    .then(news => {
+      console.log("News received:", news);
+      displayNews(news);
+    })
+    .catch(err => {
+      console.error("Error fetching news:", err);
+      displayNews([]);
+    });
 }
 
 /**
- * Populate the indicator checkboxes + chart type radio
+ * Display news items.
+ */
+function displayNews(news) {
+  const newsList = document.getElementById("newsList");
+  newsList.innerHTML = "";
+  if (news.length === 0) {
+    newsList.innerHTML = "<li>No news found.</li>";
+    return;
+  }
+  news.forEach(item => {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = item.link;
+    a.target = "_blank";
+    a.textContent = item.title;
+    li.appendChild(a);
+    if (item.provider && item.provider.name) {
+      const span = document.createElement("span");
+      span.textContent = ` (${item.provider.name})`;
+      li.appendChild(span);
+    }
+    newsList.appendChild(li);
+  });
+}
+
+/**
+ * Autocomplete: Use local proxy.
+ */
+function autoSuggestTickers(query) {
+  const url = `http://127.0.0.1:8000/autocomplete?q=${encodeURIComponent(query)}`;
+  console.log("Fetching autocomplete suggestions for query:", query);
+  return fetch(url)
+    .then(r => r.json())
+    .then(data => data.quotes || [])
+    .catch(err => {
+      console.error("Ticker search request failed:", err);
+      return [];
+    });
+}
+
+/**
+ * Setup autocomplete.
+ */
+function setupAutocomplete() {
+  tickerInput.addEventListener("input", e => {
+    e.target.value = e.target.value.toUpperCase();
+    const query = e.target.value.trim();
+    if (query.length < 1) {
+      suggestionsEl.innerHTML = "";
+      suggestionsEl.style.display = "none";
+      return;
+    }
+    autoSuggestTickers(query).then(quotes => {
+      console.log("Autocomplete suggestions received:", quotes);
+      suggestionsEl.innerHTML = "";
+      if (quotes.length === 0) {
+        suggestionsEl.style.display = "none";
+        return;
+      }
+      quotes.forEach(q => {
+        const div = document.createElement("div");
+        div.classList.add("suggestion-item");
+        div.textContent = q.symbol + (q.shortname ? ` - ${q.shortname}` : "");
+        div.addEventListener("click", () => {
+          tickerInput.value = q.symbol;
+          suggestionsEl.innerHTML = "";
+          suggestionsEl.style.display = "none";
+        });
+        suggestionsEl.appendChild(div);
+      });
+      suggestionsEl.style.display = "block";
+    });
+  });
+  document.addEventListener("click", e => {
+    if (!e.target.closest(".search-container")) {
+      suggestionsEl.innerHTML = "";
+      suggestionsEl.style.display = "none";
+    }
+  });
+}
+
+/**
+ * Populate dropdowns for chart type and indicators.
  */
 function populateDropdowns() {
-  // Price Indicators
+  // Chart type dropdown: Toggle on button click.
+  const chartTypeDropdownBtn = document.getElementById("chartTypeDropdownBtn");
+  const chartTypeDropdown = document.getElementById("chartTypeDropdown");
+  chartTypeDropdownBtn.addEventListener("click", e => {
+    // Toggle display of dropdown content.
+    if (chartTypeDropdown.style.display === "block") {
+      chartTypeDropdown.style.display = "none";
+    } else {
+      chartTypeDropdown.style.display = "block";
+    }
+  });
+  // Default selection:
+  const defaultItem = chartTypeDropdown.querySelector('[data-value="candlestick"]');
+  if (defaultItem) defaultItem.classList.add("selected");
+  chartTypeDropdown.querySelectorAll(".dropdown-item").forEach(item => {
+    item.addEventListener("click", () => {
+      chartTypeDropdown.querySelectorAll(".dropdown-item").forEach(i => i.classList.remove("selected"));
+      item.classList.add("selected");
+      chartTypeDropdownBtn.textContent = item.textContent.trim();
+      chartTypeDropdown.style.display = "none"; // Hide dropdown after selection.
+      const ticker = tickerInput.value.trim();
+      const activeBtn = document.querySelector("#timeframeButtons .active");
+      const timeframe = activeBtn ? activeBtn.dataset.period : "1Y";
+      if (ticker) fetchStock(ticker, timeframe);
+    });
+  });
+
+  // Price indicators dropdown (custom checkboxes)
   const priceDropdown = document.getElementById("priceIndicatorDropdown");
   PRICE_INDICATORS.forEach(ind => {
     let label = document.createElement("label");
@@ -531,15 +648,23 @@ function populateDropdowns() {
     let chk = document.createElement("input");
     chk.type = "checkbox";
     chk.value = ind.value;
+    let tickSpan = document.createElement("span");
+    tickSpan.classList.add("tick");
+    tickSpan.textContent = "✓";
+    label.appendChild(tickSpan);
     label.prepend(chk);
     priceDropdown.appendChild(label);
-
     chk.addEventListener("change", e => {
+      if (e.target.checked) {
+        label.classList.add("checked");
+      } else {
+        label.classList.remove("checked");
+      }
       toggleIndicator(chk.value, e.target.checked);
     });
   });
 
-  // Special Indicators
+  // Special indicators dropdown (custom checkboxes)
   const specialDropdown = document.getElementById("specialIndicatorDropdown");
   SPECIAL_INDICATORS.forEach(ind => {
     let label = document.createElement("label");
@@ -547,90 +672,93 @@ function populateDropdowns() {
     let chk = document.createElement("input");
     chk.type = "checkbox";
     chk.value = ind.value;
+    let tickSpan = document.createElement("span");
+    tickSpan.classList.add("tick");
+    tickSpan.textContent = "✓";
+    label.appendChild(tickSpan);
     label.prepend(chk);
     specialDropdown.appendChild(label);
-
     chk.addEventListener("change", e => {
+      if (e.target.checked) {
+        label.classList.add("checked");
+      } else {
+        label.classList.remove("checked");
+      }
       toggleIndicator(chk.value, e.target.checked);
     });
-  });
-
-  // Chart Type Radio
-  const chartTypeDropdownBtn = document.getElementById("chartTypeDropdownBtn");
-  const chartTypeDropdown = document.getElementById("chartTypeDropdown");
-  chartTypeDropdown.addEventListener("change", e => {
-    if (e.target.name === "chartType") {
-      // Update the button text
-      if (e.target.value === "candlestick") {
-        chartTypeDropdownBtn.textContent = "Candlestick";
-      } else if (e.target.value === "area") {
-        chartTypeDropdownBtn.textContent = "Mountain";
-      } else {
-        chartTypeDropdownBtn.textContent = e.target.value.charAt(0).toUpperCase() + e.target.value.slice(1);
-      }
-      // Re-fetch stock data to redraw chart
-      const ticker = document.getElementById("tickerSearch").value.trim();
-      const activeBtn = document.querySelector("#timeframeButtons .active");
-      const timeframe = activeBtn ? activeBtn.dataset.period : "1Y";
-      if (ticker) fetchStock(ticker, timeframe);
-    }
   });
 }
 
 /**
- * DOMContentLoaded
+ * Watchlist functions.
+ */
+function updateWatchlistUI(watchlist) {
+  const ul = document.getElementById("watchlistItems");
+  ul.innerHTML = "";
+  watchlist.forEach(ticker => {
+    const li = document.createElement("li");
+    li.textContent = ticker;
+    li.addEventListener("click", () => {
+      tickerInput.value = ticker;
+      fetchStock(ticker, "1Y");
+    });
+    ul.appendChild(li);
+  });
+}
+
+function addToWatchlist() {
+  const ticker = tickerInput.value.trim();
+  if (!ticker) return;
+  let watchlist = JSON.parse(localStorage.getItem("watchlist") || "[]");
+  if (!watchlist.includes(ticker)) {
+    watchlist.push(ticker);
+    localStorage.setItem("watchlist", JSON.stringify(watchlist));
+    updateWatchlistUI(watchlist);
+    console.log("Added to watchlist:", ticker);
+  }
+}
+
+function saveConfig() {
+  alert("Watchlist saved.");
+}
+
+function loadConfig() {
+  let watchlist = JSON.parse(localStorage.getItem("watchlist") || "[]");
+  updateWatchlistUI(watchlist);
+  console.log("Watchlist loaded.");
+}
+
+/**
+ * DOMContentLoaded: Initialize everything.
  */
 document.addEventListener("DOMContentLoaded", () => {
+  console.log("DOM fully loaded and parsed.");
   initCharts();
-
-  // Force uppercase for ticker
-  const tickerInput = document.getElementById("tickerSearch");
-  tickerInput.addEventListener("input", e => {
-    e.target.value = e.target.value.toUpperCase();
-  });
-
-  // Populate checkboxes + chart type
+  setupAutocomplete();
   populateDropdowns();
 
-  // Search button
-  document.getElementById("searchButton").addEventListener("click", () => {
+  searchButton.addEventListener("click", () => {
     const ticker = tickerInput.value.trim();
     if (ticker) fetchStock(ticker, "1Y");
   });
 
-  // Popular tickers
-  document.querySelectorAll("#popularTickers li").forEach(li => {
-    li.addEventListener("click", () => {
-      const ticker = li.dataset.ticker;
-      tickerInput.value = ticker;
-      fetchStock(ticker, "1Y");
-    });
-  });
+  document.getElementById("addWatchlistItem").addEventListener("click", addToWatchlist);
+  document.getElementById("saveConfig").addEventListener("click", saveConfig);
+  document.getElementById("loadConfig").addEventListener("click", loadConfig);
 
-  // Timeframe
   document.getElementById("timeframeButtons").addEventListener("click", e => {
     if (e.target.tagName === "BUTTON") {
       document.querySelectorAll("#timeframeButtons button").forEach(btn => btn.classList.remove("active"));
       e.target.classList.add("active");
       const ticker = tickerInput.value.trim();
-      const timeframe = e.target.dataset.period;
-      if (ticker) fetchStock(ticker, timeframe);
+      if (ticker) fetchStock(ticker, e.target.dataset.period);
     }
   });
 
-  // Handle window resize
   window.addEventListener("resize", () => {
-    if (mainChart) {
-      const mainEl = document.getElementById("mainChart");
-      mainChart.resize(mainEl.clientWidth, mainEl.clientHeight);
-    }
-    if (volumeChart) {
-      const volEl = document.getElementById("volumeChart");
-      volumeChart.resize(volEl.clientWidth, volEl.clientHeight);
-    }
-    if (indicatorChart) {
-      const indEl = document.getElementById("indicatorChart");
-      indicatorChart.resize(indEl.clientWidth, indEl.clientHeight);
-    }
+    if (mainChart) mainChart.resize(mainEl.clientWidth, mainEl.clientHeight);
+    if (volumeChart) volumeChart.resize(volumeEl.clientWidth, volumeEl.clientHeight);
+    if (indicatorChart) indicatorChart.resize(indicatorEl.clientWidth, indicatorEl.clientHeight);
+    setTimeout(() => fixScaleWidths(), 100);
   });
 });

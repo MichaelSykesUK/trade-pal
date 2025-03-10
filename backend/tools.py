@@ -1,14 +1,10 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import traceback
 from datetime import datetime, timedelta
 
 
 def process_data(data, ticker):
-    """
-    If a MultiIndex is detected, extract the sub-dataframe for the given ticker using xs().
-    """
     if isinstance(data.columns, pd.MultiIndex):
         try:
             data = data.xs(ticker, level="Ticker", axis=1)
@@ -18,10 +14,6 @@ def process_data(data, ticker):
 
 
 def convert_numpy_types(d):
-    """
-    Convert numpy types in a dictionary (of lists) to native Python types,
-    and replace NaNs with None.
-    """
     new_d = {}
     for key, lst in d.items():
         new_lst = []
@@ -30,7 +22,7 @@ def convert_numpy_types(d):
                 if isinstance(item, (np.integer,)):
                     new_lst.append(int(item))
                 elif isinstance(item, (np.floating,)):
-                    new_lst.append(float(item))
+                    new_lst.append(float(item) if not pd.isna(item) else None)
                 elif pd.isna(item):
                     new_lst.append(None)
                 else:
@@ -44,14 +36,7 @@ def convert_numpy_types(d):
 
 
 def get_extended_period(user_period: str) -> str:
-    """
-    Return a 'larger' period string for yfinance to fetch, 
-    so we have enough data to handle warm-up periods for indicators.
-    Adjust as you prefer.
-    """
     user_period = user_period.upper()
-    # Map user request to an extended period
-    # (You can tweak these values as you see fit.)
     mapping = {
         "1D":  "1y",
         "5D":  "1y",
@@ -62,26 +47,16 @@ def get_extended_period(user_period: str) -> str:
         "5Y":  "10y",
         "MAX": "max",
     }
-    return mapping.get(user_period, "2y")  # default to "2y" if not found
+    return mapping.get(user_period, "2y")
 
 
 def slice_to_requested_period(df: pd.DataFrame, user_period: str) -> pd.DataFrame:
-    """
-    Slice the DataFrame to only the last portion that corresponds to the user's requested period.
-    If user_period is '1Y', we keep only the last 365 days, etc.
-
-    If there's not enough data, we simply return whatever we have (or raise an error).
-    """
     user_period = user_period.upper()
     if df.empty:
         return df
-
-    # We'll interpret user_period into a "timedelta" of how many days to keep
-    now = df["Date"].iloc[-1]  # last date in the DataFrame (as a string)
+    now = df["Date"].iloc[-1]
     last_date = pd.to_datetime(now)
 
-    # We'll define a function to convert user_period to number of days
-    # for slicing. This is approximate. Adjust as you like.
     def period_to_days(period: str) -> int:
         if period == "1D":
             return 1
@@ -92,7 +67,6 @@ def slice_to_requested_period(df: pd.DataFrame, user_period: str) -> pd.DataFram
         elif period == "6M":
             return 180
         elif period == "YTD":
-            # from Jan 1st of current year
             year_start = datetime(last_date.year, 1, 1)
             return (last_date - year_start).days
         elif period == "1Y":
@@ -100,58 +74,81 @@ def slice_to_requested_period(df: pd.DataFrame, user_period: str) -> pd.DataFram
         elif period == "5Y":
             return 365 * 5
         elif period == "MAX":
-            return 999999  # basically all
+            return 999999
         else:
-            return 365  # fallback
+            return 365
 
     ndays = period_to_days(user_period)
     cutoff = last_date - timedelta(days=ndays)
-
-    # Now slice df so that df["Date"] >= cutoff
     df["Date_dt"] = pd.to_datetime(df["Date"])
     sliced = df[df["Date_dt"] >= cutoff].copy()
     sliced.drop(columns=["Date_dt"], inplace=True, errors="ignore")
     if sliced.empty:
-        # If there's no data in that slice, return the entire df or raise an error
-        # raise ValueError(f"Not enough data to fulfill period {user_period}")
         return df
     return sliced
 
 
-def check_enough_data(df: pd.DataFrame, min_days_required: int):
-    """
-    Check if the DataFrame has at least min_days_required rows.
-    If not, raise an error or return gracefully.
-    """
-    if len(df) < min_days_required:
-        raise ValueError(
-            f"Not enough historical data ({len(df)} days) to compute "
-            f"a {min_days_required}-day indicator. Please try a longer period or a different indicator."
-        )
-
-
 def get_kpi_data(ticker: str):
-    """
-    Fetch KPI data for the specified ticker, including companyName, marketCap, etc.
-    """
     stock = yf.Ticker(ticker)
     info = stock.info or {}
+    hist = stock.history(period="1d", interval="1d")
+    if not hist.empty:
+        hist = hist.reset_index()
+        open_price = hist["Open"].iloc[-1] if not hist["Open"].empty else None
+        previous_close = info.get("previousClose", None)
+        day_low = hist["Low"].iloc[-1] if not hist["Low"].empty else None
+        day_high = hist["High"].iloc[-1] if not hist["High"].empty else None
+    else:
+        open_price = None
+        previous_close = None
+        day_low = None
+        day_high = None
+
+    hist_52w = stock.history(period="1y", interval="1d")
+    if not hist_52w.empty:
+        week_low_52 = hist_52w["Low"].min()
+        week_high_52 = hist_52w["High"].max()
+        avg_volume = hist_52w["Volume"].mean()
+    else:
+        week_low_52 = None
+        week_high_52 = None
+        avg_volume = None
+
+    # Use forwardPE and earningsTimestamp (if available) for additional KPIs.
+    forward_pe = info.get("forwardPE", "N/A")
+    earnings_ts = info.get("earningsTimestamp", None)
+    if earnings_ts:
+        try:
+            next_earnings = datetime.fromtimestamp(
+                earnings_ts).strftime("%Y-%m-%d")
+        except Exception:
+            next_earnings = str(earnings_ts)
+    else:
+        next_earnings = "N/A"
 
     kpi = {
         "companyName": info.get("longName", "N/A"),
+        "exchange": info.get("exchange", ""),
+        "currency": info.get("currency", ""),
         "peRatio": info.get("trailingPE", "N/A"),
-        "weekHigh52": info.get("fiftyTwoWeekHigh", "N/A"),
-        "weekLow52": info.get("fiftyTwoWeekLow", "N/A"),
+        "forwardPE": forward_pe,
+        "nextEarningsDate": next_earnings,
+        "weekHigh52": week_high_52,
+        "weekLow52": week_low_52,
         "marketCap": info.get("marketCap", "N/A"),
         "beta": info.get("beta", "N/A"),
         "eps": info.get("trailingEps", "N/A"),
         "dividend": info.get("dividendRate", "N/A"),
         "exDividendDate": str(info.get("exDividendDate", "N/A")),
+        "openPrice": open_price,
+        "previousClose": previous_close,
+        "daysRange": f"{day_low:.2f} - {day_high:.2f}" if day_low and day_high else "N/A",
+        "weekRange": f"{week_low_52:.2f} - {week_high_52:.2f}" if week_low_52 and week_high_52 else "N/A",
+        "avgVolume": avg_volume,
     }
     return kpi
 
 
-# --- Technical Indicator Functions ---
 def compute_ma(prices, window):
     return prices.rolling(window=window).mean()
 
@@ -204,11 +201,9 @@ def compute_atr(high, low, close, window=14):
 
 
 def compute_obv(close, volume):
-    # OBV is cumulative from the first data point
     obv = [0]
     for i in range(1, len(close)):
-        if close.iloc[i] is None or close.iloc[i-1] is None:
-            # if missing data, just carry forward
+        if pd.isna(close.iloc[i]) or pd.isna(close.iloc[i-1]):
             obv.append(obv[-1])
             continue
         if close.iloc[i] > close.iloc[i - 1]:
@@ -221,135 +216,75 @@ def compute_obv(close, volume):
 
 
 def get_stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
-    """
-    1) Convert user 'period' to a bigger fetch period (e.g. 1Y -> 2Y).
-    2) Fetch data from yfinance for that extended period.
-    3) Process data, no big indicators are computed here, but we could.
-    4) Slice to the actual user period (the last portion).
-    5) Return the final dictionary.
-    """
-    extended_period = get_extended_period(period)
-    try:
+    if period == "1d":
+        data = yf.download(ticker, period="1d", interval="1m")
+    else:
+        extended_period = get_extended_period(period)
         data = yf.download(ticker, period=extended_period,
                            interval=interval, auto_adjust=False)
-    except Exception as e:
-        traceback.print_exc()
-        raise ValueError(f"Error downloading data for ticker {ticker}: {e}")
-
     if data.empty:
-        raise ValueError(
-            f"No data found for {ticker} in extended period {extended_period}.")
-
-    # If multi-index, reduce
+        raise ValueError(f"No data found for {ticker} in period {period}.")
     data = process_data(data, ticker)
-
     data.reset_index(inplace=True)
     if "Date" not in data.columns:
         data["Date"] = data.index.astype(str)
     else:
         data["Date"] = data["Date"].astype(str)
-
-    # Convert to normal python types
     data = data.where(pd.notnull(data), None)
-
-    # Now slice to the actual user period
     data = slice_to_requested_period(data, period)
-
-    # Convert to dict
     d = data.to_dict(orient="list")
     d = convert_numpy_types(d)
     return d
 
 
-def get_technical_indicators(ticker: str, period: str = "1y", interval: str = "1d", ma_window: int = 50):
-    """
-    1) Convert user 'period' to a bigger fetch period to allow warm-up.
-    2) Fetch data from yfinance for that extended period.
-    3) Compute all indicators on the full dataset.
-    4) Slice to the actual user period.
-    5) Return final dictionary with columns for RSI, OBV, etc.
-    6) If not enough data for the largest needed window, raise an error.
-    """
-    extended_period = get_extended_period(period)
-    try:
-        data = yf.download(ticker, period=extended_period,
-                           interval=interval, auto_adjust=False)
-    except Exception as e:
-        traceback.print_exc()
-        raise ValueError(f"Error downloading data for ticker {ticker}: {e}")
-
+def get_technical_indicators(ticker: str, period: str = "1y", interval: str = "1d"):
+    data = yf.download(ticker, period=period,
+                       interval=interval, auto_adjust=False)
     if data.empty:
-        raise ValueError(
-            f"No data found for {ticker} in extended period {extended_period}.")
-
-    # If multi-index, reduce
+        raise ValueError(f"No data found for {ticker} in period {period}.")
     data = process_data(data, ticker)
-    data.dropna(subset=["Close"], inplace=True)  # ensure we have valid close
-
-    # Check if we have enough rows to handle the largest indicator window
-    # For instance, if ma_window=200, we need at least 200 data points, etc.
-    # We'll also consider RSI(14) or Bollinger(20), whichever is largest.
-    # For demonstration, we assume ma_window is the largest we might need.
-    min_days = ma_window  # you can also incorporate other indicator windows if needed
-    if len(data) < min_days:
+    data.dropna(subset=["Close"], inplace=True)
+    if len(data) < 200:
         raise ValueError(
-            f"Not enough data ({len(data)} rows) to compute a {ma_window}-day indicator. "
-            "Try a longer period or a smaller window."
-        )
-
-    # Convert index to column for slicing
+            f"Not enough data ({len(data)}) to compute a 200-day indicator.")
     data.reset_index(inplace=True)
     if "Date" not in data.columns:
         data["Date"] = data.index.astype(str)
     else:
         data["Date"] = data["Date"].astype(str)
-
-    # Compute all the indicators on the entire extended dataset
     df = data.copy()
-
-    # For convenience
     close = df["Close"].astype(float)
     high = df["High"].astype(float)
     low = df["Low"].astype(float)
     vol = df["Volume"].fillna(0).astype(float)
-
-    # MA and EMA
-    df["MA"] = compute_ma(close, window=ma_window)
-    df["EMA"] = compute_ema(close, window=ma_window)
-
-    # RSI
+    df["MA50"] = compute_ma(close, window=50)
+    df["MA100"] = compute_ma(close, window=100)
+    df["MA150"] = compute_ma(close, window=150)
+    df["MA200"] = compute_ma(close, window=200)
     df["RSI"] = compute_rsi(close, window=14)
-
-    # Bollinger
     ma_line, upper_band, lower_band = compute_bollinger_bands(
         close, window=20, num_std=2)
     df["Bollinger_MA"] = ma_line
     df["Upper_Band"] = upper_band
     df["Lower_Band"] = lower_band
-
-    # Momentum
     df["Momentum"] = compute_momentum(close, window=5)
-
-    # Volatility
     df["Volatility"] = compute_volatility(close, window=20)
-
-    # MACD
-    macd_line, signal_line = compute_macd(
-        close, short_window=12, long_window=26, signal_window=9)
+    macd_line, signal_line = compute_macd(close, 12, 26, 9)
     df["MACD"] = macd_line
     df["MACD_Signal"] = signal_line
-
-    # ATR
     df["ATR"] = compute_atr(high, low, close, window=14)
-
-    # OBV
     df["OBV"] = compute_obv(close, vol)
-
-    # Now slice to the actual user period
     df = df.where(pd.notnull(df), None)
-    df = slice_to_requested_period(df, period)
+    d = df.to_dict(orient="list")
+    d = convert_numpy_types(d)
+    return d
 
-    # Convert to dict
+
+def slice_indicator_data(indicator_data: dict, user_period: str) -> dict:
+    df = pd.DataFrame(indicator_data)
+    if df.empty:
+        return indicator_data
+    df = slice_to_requested_period(df, user_period)
     d = df.to_dict(orient="list")
     d = convert_numpy_types(d)
     return d
