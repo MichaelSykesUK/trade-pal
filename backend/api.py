@@ -11,12 +11,10 @@ from tools import (
 
 app = FastAPI()
 
-# Allow requests from your front-end (adjust if needed)
 origins = [
     "http://localhost:8080",
     "http://127.0.0.1:8080",
 ]
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -30,9 +28,6 @@ INDICATOR_DATA_STORE = {}
 
 @app.get("/autocomplete")
 def yahoo_autocomplete(q: str):
-    """
-    Proxy Yahoo Finance search endpoint for autocomplete.
-    """
     base_url = "https://query2.finance.yahoo.com/v1/finance/search"
     params = {
         "q": q,
@@ -54,10 +49,6 @@ def yahoo_autocomplete(q: str):
 
 @app.get("/news/{ticker}")
 def get_news(ticker: str):
-    """
-    Fetches news for the given ticker using Yahoo Finance v1.
-    Returns up to 10 news items.
-    """
     base_url = "https://query2.finance.yahoo.com/v1/finance/search"
     params = {
         "q": ticker,
@@ -107,15 +98,15 @@ def kpi_data_endpoint(ticker: str):
 
 
 @app.get("/indicators/{ticker}")
-def indicators(ticker: str, period: str = "1y", interval: str = "1d", ma: int = 50):
+def indicators(ticker: str, period: str = "1y", interval: str = "1d"):
     global INDICATOR_DATA_STORE
     try:
         if ticker not in INDICATOR_DATA_STORE:
             max_indicators = get_technical_indicators(
                 ticker, period="max", interval=interval)
             INDICATOR_DATA_STORE[ticker] = max_indicators
-        data = slice_indicator_data(INDICATOR_DATA_STORE[ticker], period)
-        return data
+        d = slice_indicator_data(INDICATOR_DATA_STORE[ticker], period)
+        return d
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

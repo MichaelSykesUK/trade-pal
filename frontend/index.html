@@ -10,25 +10,33 @@
 <body>
   <!-- Top Ribbon -->
   <div id="topRibbon">
-    <div id="topSearchContainer">
-      <input type="text" id="tickerSearch" placeholder="Search...">
-      <button id="searchButton" class="primary-btn">Search</button>
-      <div id="tickerSuggestions" class="autocomplete-suggestions"></div>
+    <!-- Left area: Centered search bar -->
+    <div id="topRibbonLeft">
+      <div id="topSearchContainer">
+        <input type="text" id="tickerSearch" placeholder="Search...">
+        <!-- The clear "X" inside the text box -->
+        <div id="searchClear" class="search-clear-btn">&times;</div>
+        <button id="searchButton" class="primary-btn">Search</button>
+        <div id="tickerSuggestions" class="autocomplete-suggestions"></div>
+      </div>
+    </div>
+    <!-- Right area: Save/Load config -->
+    <div id="topRibbonRight">
+      <button id="saveConfig" class="secondary-btn">Save Config</button>
+      <button id="loadConfig" class="secondary-btn">Load Config</button>
     </div>
   </div>
 
-  <!-- Main Container: left, center, right panes -->
+  <!-- Main Container -->
   <div id="mainContainer">
     <!-- Left Pane -->
     <div id="left-pane">
-      <h3>Watchlist</h3>
-      <ul id="watchlistItems"></ul>
-      <button id="addWatchlistItem" class="secondary-btn">Add to Watchlist</button>
-      <button id="saveConfig" class="secondary-btn">Save Config</button>
-      <button id="loadConfig" class="secondary-btn">Load Config</button>
-
-      <div id="marketInfoSection">
-        <h3>Market Info</h3>
+      <div class="watchlist-box">
+        <h2>Watchlist</h2>
+        <ul id="watchlistItems"></ul>
+      </div>
+      <div class="market-box">
+        <h2>Market Info</h2>
         <ul id="marketIndexesList"></ul>
       </div>
     </div>
@@ -37,7 +45,12 @@
     <div id="center-pane">
       <div id="stockInfo">
         <div id="stockExchange"></div>
-        <h2 id="stockName">Ticker - Company Name</h2>
+        <!-- Name + "Add to Watchlist" on the same line -->
+        <div id="stockNameRow">
+          <h2 id="stockName">Company Name (TICKER)</h2>
+          <button id="centerAddWatchlist" class="semi-round-btn">Add to Watchlist</button>
+        </div>
+        <!-- Price container below that -->
         <div id="stockPriceContainer">
           <span id="stockPrice">0.00</span>
           <span id="stockChange">0.00 (0.00%)</span>
@@ -47,7 +60,6 @@
         </div>
       </div>
 
-      <!-- Timeframe + Indicators -->
       <div id="controlsRow">
         <div id="timeframeButtons">
           <button data-period="1D" class="timeframe-btn">1D</button>
@@ -61,7 +73,7 @@
         </div>
         <div id="chartOptions">
           <div class="dropdown">
-            <button id="chartTypeDropdownBtn" class="nice-select">Candlestick</button>
+            <button id="chartTypeDropdownBtn" class="nice-select">Chart Type</button>
             <div id="chartTypeDropdown" class="dropdown-content">
               <div class="dropdown-item" data-value="line">Line <span class="tick">✓</span></div>
               <div class="dropdown-item" data-value="area">Mountain <span class="tick">✓</span></div>
@@ -79,7 +91,6 @@
         </div>
       </div>
 
-      <!-- Charts -->
       <div id="chartsSection">
         <div id="mainChartContainer">
           <div id="mainChartLegend"></div>
@@ -94,7 +105,6 @@
         </div>
       </div>
 
-      <!-- KPI Table -->
       <div id="kpiTableContainer">
         <table id="kpiTable">
           <tbody>
@@ -103,14 +113,12 @@
               <td id="previousClose">N/A</td>
               <td><strong>Open Price:</strong></td>
               <td id="openPrice">N/A</td>
-            </tr>
-            <tr>
               <td><strong>Day's Range:</strong></td>
               <td id="daysRange">N/A</td>
-              <td><strong>52W Range:</strong></td>
-              <td id="weekRange">N/A</td>
             </tr>
             <tr>
+              <td><strong>52W Range:</strong></td>
+              <td id="weekRange">N/A</td>
               <td><strong>52W High:</strong></td>
               <td id="weekHigh">N/A</td>
               <td><strong>52W Low:</strong></td>
@@ -121,14 +129,12 @@
               <td id="peRatio">N/A</td>
               <td><strong>Market Cap:</strong></td>
               <td id="marketCap">N/A</td>
-            </tr>
-            <tr>
               <td><strong>Forward P/E:</strong></td>
               <td id="forwardPE">N/A</td>
-              <td><strong>Next Earnings:</strong></td>
-              <td id="nextEarningsDate">N/A</td>
             </tr>
             <tr>
+              <td><strong>Next Earnings:</strong></td>
+              <td id="nextEarningsDate">N/A</td>
               <td><strong>Beta:</strong></td>
               <td id="beta">N/A</td>
               <td><strong>EPS (TTM):</strong></td>
@@ -137,14 +143,18 @@
             <tr>
               <td><strong>Dividend:</strong></td>
               <td id="dividend">N/A</td>
-              <td><strong>Ex-Dividend Date:</strong></td>
+              <td><strong>Ex-Dividend:</strong></td>
               <td id="exDividendDate">N/A</td>
-            </tr>
-            <tr>
               <td><strong>Volume:</strong></td>
               <td id="volumeKpi">N/A</td>
+            </tr>
+            <tr>
               <td><strong>Avg Volume:</strong></td>
               <td id="avgVolume">N/A</td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
             </tr>
           </tbody>
         </table>
@@ -153,8 +163,8 @@
 
     <!-- Right Pane -->
     <div id="right-pane">
-      <div id="newsContainer">
-        <h3>Related News</h3>
+      <div class="news-box">
+        <h2>Related News</h2>
         <ul id="newsList"></ul>
       </div>
     </div>

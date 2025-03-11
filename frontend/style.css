@@ -10,11 +10,11 @@ body {
   background-color: #fff;
   color: #333;
   display: flex;
-  flex-direction: column; /* Top ribbon, then main container */
+  flex-direction: column;
   height: 100vh;
 }
 
-/* Top Ribbon, centered search box */
+/* Top Ribbon */
 #topRibbon {
   width: 100%;
   background-color: #fff;
@@ -22,44 +22,76 @@ body {
   padding: 8px 16px;
   box-sizing: border-box;
   display: flex;
-  justify-content: center;  /* center horizontally */
+  justify-content: space-between;
   align-items: center;
 }
-#topSearchContainer {
-  display: inline-flex;
+
+#topRibbonLeft {
+  flex: 1;
+  display: flex;
+  justify-content: center; /* center the search bar horizontally */
+}
+#topRibbonRight {
+  display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+#topSearchContainer {
   position: relative;
   width: 100%;
-  max-width: 600px;
+  max-width: 400px;
+  display: inline-flex;
+  align-items: center;
 }
-#topSearchContainer input {
+
+/* The clear "X" in the search box */
+.search-clear-btn {
+  display: none;
+  position: absolute;
+  right: 64px; /* enough space to not overlap the "Search" button */
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  text-align: center;
+  line-height: 18px;
+  color: #333;
+}
+.search-clear-btn:hover {
+  background-color: #eee;
+}
+
+#tickerSearch {
   width: 100%;
   padding: 6px 8px;
   border: 1px solid #ccc;
   border-radius: 6px;
   font-size: 12px;
-  outline: none;
   height: 28px;
-  line-height: 12px;
   margin-right: 8px;
 }
-#topSearchContainer input:focus {
+#tickerSearch:focus {
   border-color: #007aff;
 }
-#topSearchContainer button {
+
+#searchButton {
   background-color: #fff;
   border: 1px solid #ccc;
   border-radius: 6px;
   font-size: 12px;
-  cursor: pointer;
   height: 28px;
-  line-height: 12px;
   padding: 4px 8px;
+  cursor: pointer;
 }
-#topSearchContainer button:hover {
+#searchButton:hover {
   background-color: #eee;
 }
-#topSearchContainer .autocomplete-suggestions {
+
+.autocomplete-suggestions {
   position: absolute;
   top: 32px;
   left: 0;
@@ -71,110 +103,215 @@ body {
   z-index: 9999;
   display: none;
 }
-#topSearchContainer .suggestion-item {
+.suggestion-item {
   padding: 4px 8px;
   cursor: pointer;
 }
-#topSearchContainer .suggestion-item:hover {
+.suggestion-item:hover {
   background-color: #eee;
 }
 
-/* Main container (left, center, right) below the ribbon */
+/* Main Container */
 #mainContainer {
   flex: 1;
   display: flex;
-  width: 100%;
-  box-sizing: border-box;
-  overflow: hidden; 
+  overflow: hidden;
 }
 
 /* Left Pane */
 #left-pane {
   width: 20%;
-  background-color: #fff;
-  overflow-y: auto;
-  border-right: 1px solid #ccc;
   padding: 20px;
   box-sizing: border-box;
+  border-right: 1px solid #ccc;
+  overflow-y: auto;
 }
-#left-pane h3 {
+
+.watchlist-box,
+.market-box {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 10px;
+  margin-bottom: 20px;
+  background-color: #fff;
+}
+.watchlist-box h2,
+.market-box h2 {
+  font-size: 14px;
   margin: 0 0 8px 0;
-  font-size: 12px;
 }
+
+/* Buttons */
 .primary-btn, .secondary-btn {
   background-color: #fff;
   border: 1px solid #ccc;
   color: #333;
   padding: 4px 8px;
-  margin: 4px 0;
-  cursor: pointer;
+  margin: 0 4px 0 0;
   border-radius: 6px;
   font-size: 12px;
-  line-height: 12px;
-  text-align: center;
+  cursor: pointer;
 }
 .primary-btn:hover, .secondary-btn:hover {
   background-color: #eee;
 }
 
-/* Market Info as a simple list with day + ytd labels. */
-#marketInfoSection {
-  margin-top: 20px;
-}
-#marketInfoSection h3 {
-  margin: 0 0 8px 0;
-  font-size: 12px;
-}
+/* Watchlist & Market items */
+#watchlistItems,
 #marketIndexesList {
   list-style: none;
-  padding: 0;
   margin: 0;
+  padding: 0;
   font-size: 12px;
 }
-#marketIndexesList li {
-  padding: 4px 0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+
+.item-container {
+  border-bottom: 1px solid #ccc;
+  padding: 6px 0;
+  position: relative;
   cursor: pointer;
 }
-#marketIndexesList li:hover {
+.item-container:hover {
+  background-color: #f5f5f5;
+}
+
+/* We'll do row1 as a grid to fit Ticker, Price, Daily, YTD, Remove X in one row */
+.item-row1 {
+  display: grid;
+  grid-template-columns: 60px 60px 80px 80px 24px; /* Ticker, Price, Daily, YTD, X */
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+.item-col-ticker {
+  font-weight: bold;
+}
+.item-col-price {
+  text-align: right;
+}
+.item-col-daily {
+  text-align: right;
+  font-weight: bold;
+}
+.item-col-ytd {
+  text-align: right;
+}
+.item-col-remove {
+  text-align: center;
+  position: relative;
+}
+
+.item-row2 {
+  font-size: 11px;
+  color: #666;
+  margin: 0;
+}
+
+/* The remove watchlist "X" is now inline in the last grid column */
+.remove-watchlist-btn {
+  font-size: 14px;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  line-height: 18px;
+  text-align: center;
+  color: #333;
+  cursor: pointer;
+  display: none; /* only show on hover */
+}
+.item-container:hover .remove-watchlist-btn {
+  display: inline-block;
+}
+.remove-watchlist-btn:hover {
   background-color: #eee;
+}
+
+/* color-coded up/down */
+.up {
+  color: #009900;
+}
+.down {
+  color: #cc0000;
 }
 
 /* Center Pane */
 #center-pane {
   width: 60%;
-  overflow-y: auto;
-  background-color: #fff;
   padding: 20px;
   box-sizing: border-box;
-}
-#stockInfo h2 {
-  margin: 6px 0;
-  font-size: 16px;
+  overflow-y: auto;
 }
 
-/* Controls row for timeframe + chart options */
+#stockInfo {
+  margin-bottom: 10px;
+}
+#stockExchange {
+  margin-bottom: 2px;
+}
+
+/* Name row => name + add button on same line */
+#stockNameRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+#stockName {
+  margin: 0;
+  font-size: 18px;
+}
+
+#stockPriceContainer {
+  margin-bottom: 4px;
+}
+#stockPrice {
+  font-size: 20px;
+  font-weight: bold;
+  margin-right: 8px;
+}
+#stockChange {
+  font-weight: bold;
+}
+#stockChange.up {
+  color: #009900;
+}
+#stockChange.down {
+  color: #cc0000;
+}
+
+#stockDateContainer {
+  margin-bottom: 10px;
+}
+
+/* Add to Watchlist button in same row as name */
+.semi-round-btn {
+  border-radius: 9999px;
+  padding: 4px 12px;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  cursor: pointer;
+}
+.semi-round-btn:hover {
+  background-color: #eee;
+}
+
+/* Controls Row */
 #controlsRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 10px;
 }
-
-/* Timeframe Buttons */
 .timeframe-btn {
   background-color: #fff;
   border: 1px solid #ccc;
-  color: #333;
   padding: 4px 8px;
   margin-right: 4px;
-  cursor: pointer;
   border-radius: 6px;
   font-size: 12px;
-  line-height: 12px;
   height: 28px;
+  cursor: pointer;
 }
 .timeframe-btn:hover {
   background-color: #ddd;
@@ -184,7 +321,6 @@ body {
   color: #fff;
 }
 
-/* Dropdowns */
 #chartOptions {
   display: flex;
   gap: 8px;
@@ -212,8 +348,8 @@ body {
 }
 .dropdown-item {
   padding: 4px 8px;
-  cursor: pointer;
   font-size: 12px;
+  cursor: pointer;
 }
 .dropdown-item:hover {
   background-color: #eee;
@@ -226,14 +362,13 @@ body {
 .dropdown-item.selected .tick {
   display: inline;
 }
-/* Price & Special Indicators (custom checkboxes) */
 .dropdown-content label {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   padding: 4px 8px;
-  cursor: pointer;
   font-size: 12px;
+  cursor: pointer;
 }
 .dropdown-content label:hover {
   background-color: #eee;
@@ -250,7 +385,6 @@ body {
 .dropdown-content label.checked .tick {
   display: inline;
 }
-/* The .nice-select button */
 .nice-select {
   padding: 4px 8px;
   border-radius: 6px;
@@ -258,12 +392,10 @@ body {
   background-color: #fff;
   font-size: 12px;
   cursor: pointer;
-  position: relative;
   height: 28px;
-  line-height: 12px;
 }
 
-/* Charts Section */
+/* Charts */
 #chartsSection {
   margin-bottom: 10px;
 }
@@ -271,10 +403,10 @@ body {
 #volumeChartContainer,
 #indicatorChartContainer {
   width: 100%;
-  position: relative;
   border: 1px solid #ccc;
   margin-bottom: 6px;
   background-color: #fff;
+  position: relative;
 }
 #mainChartContainer {
   height: 300px;
@@ -305,42 +437,34 @@ body {
 #kpiTable td {
   padding: 4px;
   vertical-align: top;
+  width: 16.6%;
 }
 
-/* Legends */
-#mainChartLegend,
-#indicatorChartLegend {
-  font-size: 12px;
-  background: transparent;
-  border: none;
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  z-index: 2;
-}
-
-/* Right Pane, with vertical line from center */
+/* Right Pane */
 #right-pane {
   width: 20%;
-  overflow-y: auto;
-  background-color: #fff;
   padding: 20px;
   box-sizing: border-box;
-  border-left: 1px solid #ccc; /* vertical line */
+  border-left: 1px solid #ccc;
+  overflow-y: auto;
+}
+#right-pane h2 {
+  font-size: 14px;
+  margin: 0 0 8px 0;
 }
 
-/* News styling */
-#newsContainer {
-  margin-top: 10px;
-  font-size: 12px;
-}
-#newsContainer h3 {
-  margin: 0 0 5px 0;
-  font-size: 12px;
+/* News container */
+.news-box {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 10px;
+  background-color: #fff;
 }
 #newsList {
-  list-style-type: none;
-  padding-left: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
   font-size: 12px;
 }
 #newsList li {
@@ -348,7 +472,7 @@ body {
   border-bottom: 1px solid #ccc;
   padding-bottom: 6px;
   display: flex;
-  justify-content: space-between; 
+  justify-content: space-between;
   align-items: flex-start;
 }
 .news-item-text {
@@ -356,8 +480,8 @@ body {
   box-sizing: border-box;
 }
 .news-thumbnail {
-  width: 160px; 
-  height: 120px; 
+  width: 160px;
+  height: 120px;
   object-fit: cover;
   border-radius: 6px;
   margin-left: 8px;
@@ -366,10 +490,9 @@ body {
   color: #000;
   font-weight: bold;
   text-decoration: none;
-  margin-bottom: 4px;
-  margin-top: 2px;
-  display: block;
+  margin: 2px 0;
   font-size: 12px;
+  display: block;
 }
 #newsList li a:hover {
   color: #007aff;
@@ -387,23 +510,11 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0,0,0,0.5);
   display: none;
   justify-content: center;
   align-items: center;
   color: #fff;
   font-size: 24px;
   z-index: 10000;
-}
-
-/* Watchlist styling */
-#watchlistItems {
-  list-style-type: none;
-  padding-left: 0;
-  font-size: 12px;
-}
-#watchlistItems li {
-  cursor: pointer;
-  padding: 4px 0;
-  border-bottom: 1px solid #ccc;
 }
