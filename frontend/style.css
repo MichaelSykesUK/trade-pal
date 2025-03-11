@@ -7,47 +7,63 @@ body {
   margin: 0;
   font-family: var(--main-font);
   font-size: var(--main-font-size);
-  display: flex;
-  height: 100vh;
-  background-color: #f7f7f7;
+  background-color: #fff;
   color: #333;
+  display: flex;
+  flex-direction: column; /* Top ribbon, then main container */
+  height: 100vh;
 }
 
-/* Left Pane */
-#left-pane {
-  width: 20%;
-  background-color: #fafafa;
-  padding: 10px;
-  overflow-y: auto;
-  border-right: 1px solid #ccc;
+/* Top Ribbon, centered search box */
+#topRibbon {
+  width: 100%;
+  background-color: #fff;
+  border-bottom: 1px solid #ccc;
+  padding: 8px 16px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;  /* center horizontally */
+  align-items: center;
+}
+#topSearchContainer {
+  display: inline-flex;
+  align-items: center;
   position: relative;
+  width: 100%;
+  max-width: 600px;
 }
-
-/* Center Pane */
-#center-pane {
-  width: 60%;
-  padding: 10px;
-  overflow-y: auto;
+#topSearchContainer input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 12px;
+  outline: none;
+  height: 28px;
+  line-height: 12px;
+  margin-right: 8px;
 }
-
-/* Right Pane */
-#right-pane {
-  width: 20%;
-  background-color: #ffffff;
-  padding: 10px;
-  overflow-y: auto;
-  border-left: 1px solid #ccc;
+#topSearchContainer input:focus {
+  border-color: #007aff;
 }
-
-/* Search container and autocomplete */
-.search-container {
-  position: relative;
+#topSearchContainer button {
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  height: 28px;
+  line-height: 12px;
+  padding: 4px 8px;
 }
-.autocomplete-suggestions {
+#topSearchContainer button:hover {
+  background-color: #eee;
+}
+#topSearchContainer .autocomplete-suggestions {
   position: absolute;
-  top: 36px;
+  top: 32px;
   left: 0;
-  width: 90%;
+  width: 100%;
   max-height: 200px;
   overflow-y: auto;
   background: #fff;
@@ -55,15 +71,202 @@ body {
   z-index: 9999;
   display: none;
 }
-.autocomplete-suggestions .suggestion-item {
+#topSearchContainer .suggestion-item {
   padding: 4px 8px;
   cursor: pointer;
 }
-.autocomplete-suggestions .suggestion-item:hover {
+#topSearchContainer .suggestion-item:hover {
   background-color: #eee;
 }
 
-/* Chart Containers */
+/* Main container (left, center, right) below the ribbon */
+#mainContainer {
+  flex: 1;
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden; 
+}
+
+/* Left Pane */
+#left-pane {
+  width: 20%;
+  background-color: #fff;
+  overflow-y: auto;
+  border-right: 1px solid #ccc;
+  padding: 20px;
+  box-sizing: border-box;
+}
+#left-pane h3 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+}
+.primary-btn, .secondary-btn {
+  background-color: #fff;
+  border: 1px solid #ccc;
+  color: #333;
+  padding: 4px 8px;
+  margin: 4px 0;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 12px;
+  text-align: center;
+}
+.primary-btn:hover, .secondary-btn:hover {
+  background-color: #eee;
+}
+
+/* Market Info as a simple list with day + ytd labels. */
+#marketInfoSection {
+  margin-top: 20px;
+}
+#marketInfoSection h3 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+}
+#marketIndexesList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+}
+#marketIndexesList li {
+  padding: 4px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+#marketIndexesList li:hover {
+  background-color: #eee;
+}
+
+/* Center Pane */
+#center-pane {
+  width: 60%;
+  overflow-y: auto;
+  background-color: #fff;
+  padding: 20px;
+  box-sizing: border-box;
+}
+#stockInfo h2 {
+  margin: 6px 0;
+  font-size: 16px;
+}
+
+/* Controls row for timeframe + chart options */
+#controlsRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+/* Timeframe Buttons */
+.timeframe-btn {
+  background-color: #fff;
+  border: 1px solid #ccc;
+  color: #333;
+  padding: 4px 8px;
+  margin-right: 4px;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 12px;
+  height: 28px;
+}
+.timeframe-btn:hover {
+  background-color: #ddd;
+}
+.timeframe-btn.active {
+  background-color: #007aff;
+  color: #fff;
+}
+
+/* Dropdowns */
+#chartOptions {
+  display: flex;
+  gap: 8px;
+  position: relative;
+}
+.dropdown {
+  position: relative;
+}
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: #fff;
+  min-width: 120px;
+  max-width: 180px;
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  z-index: 9999;
+  padding: 4px 0;
+  top: 28px;
+}
+.dropdown.open .dropdown-content {
+  display: block;
+}
+.dropdown-item {
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.dropdown-item:hover {
+  background-color: #eee;
+}
+.dropdown-item .tick {
+  margin-left: 4px;
+  color: #007aff;
+  display: none;
+}
+.dropdown-item.selected .tick {
+  display: inline;
+}
+/* Price & Special Indicators (custom checkboxes) */
+.dropdown-content label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.dropdown-content label:hover {
+  background-color: #eee;
+}
+.dropdown-content input[type="checkbox"] {
+  display: none;
+}
+.dropdown-content .tick {
+  margin-left: 4px;
+  color: #007aff;
+  display: none;
+  font-weight: bold;
+}
+.dropdown-content label.checked .tick {
+  display: inline;
+}
+/* The .nice-select button */
+.nice-select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  position: relative;
+  height: 28px;
+  line-height: 12px;
+}
+
+/* Charts Section */
+#chartsSection {
+  margin-bottom: 10px;
+}
 #mainChartContainer,
 #volumeChartContainer,
 #indicatorChartContainer {
@@ -71,6 +274,7 @@ body {
   position: relative;
   border: 1px solid #ccc;
   margin-bottom: 6px;
+  background-color: #fff;
 }
 #mainChartContainer {
   height: 300px;
@@ -88,124 +292,102 @@ body {
   height: 100%;
 }
 
-/* Timeframe Buttons */
-.timeframe-btn {
-  background-color: #fff;
-  border: 1px solid #ccc;
-  color: #333;
-  padding: 4px 8px;
-  margin-right: 4px;
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: var(--main-font-size);
-}
-.timeframe-btn.active {
-  background-color: #007aff;
-  color: #fff;
-}
-
-/* Chart Options (Dropdowns) */
-#chartOptions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin: 10px 0;
-}
-.nice-select {
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-  background-color: #fff;
-  font-size: var(--main-font-size);
-  cursor: pointer;
-  position: relative;
-}
-.dropdown-content {
-  display: none;
-  position: absolute;
-  background-color: #fff;
-  min-width: 140px;
-  border: 1px solid #ccc;
-  z-index: 999;
-}
-.nice-select:hover .dropdown-content,
-.dropdown-content:hover {
-  display: block;
-  background-color: #f0f0f0;
-}
-.dropdown-item {
-  padding: 6px 8px;
-  cursor: pointer;
-}
-.dropdown-item:hover {
-  background-color: #e0e0e0;
-}
-.dropdown-item .tick {
-  float: right;
-  color: #007aff;
-  display: none;
-}
-.dropdown-item.selected .tick {
-  display: inline;
-}
-
-/* For indicator dropdowns, use custom checkboxes with tick marks */
-.dropdown-content label {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 8px;
-  cursor: pointer;
-}
-.dropdown-content label:hover {
-  background-color: #e0e0e0;
-}
-.dropdown-content input[type="checkbox"] {
-  display: none;
-}
-.dropdown-content label .tick {
-  font-weight: bold;
-  color: #007aff;
-  display: none;
-}
-.dropdown-content label.checked .tick {
-  display: inline;
-}
-
-/* KPI Table and News */
-#kpiNewsContainer {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 10px;
-}
+/* KPI Table */
 #kpiTableContainer {
-  width: 48%;
+  margin-top: 10px;
+  background-color: #fff;
 }
+#kpiTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+#kpiTable td {
+  padding: 4px;
+  vertical-align: top;
+}
+
+/* Legends */
+#mainChartLegend,
+#indicatorChartLegend {
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  z-index: 2;
+}
+
+/* Right Pane, with vertical line from center */
+#right-pane {
+  width: 20%;
+  overflow-y: auto;
+  background-color: #fff;
+  padding: 20px;
+  box-sizing: border-box;
+  border-left: 1px solid #ccc; /* vertical line */
+}
+
+/* News styling */
 #newsContainer {
-  width: 48%;
+  margin-top: 10px;
+  font-size: 12px;
 }
 #newsContainer h3 {
   margin: 0 0 5px 0;
+  font-size: 12px;
 }
 #newsList {
   list-style-type: none;
   padding-left: 0;
+  font-size: 12px;
 }
 #newsList li {
-  margin-bottom: 8px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 6px;
+  display: flex;
+  justify-content: space-between; 
+  align-items: flex-start;
+}
+.news-item-text {
+  width: 60%;
+  box-sizing: border-box;
+}
+.news-thumbnail {
+  width: 160px; 
+  height: 120px; 
+  object-fit: cover;
+  border-radius: 6px;
+  margin-left: 8px;
 }
 #newsList li a {
+  color: #000;
+  font-weight: bold;
   text-decoration: none;
+  margin-bottom: 4px;
+  margin-top: 2px;
+  display: block;
+  font-size: 12px;
+}
+#newsList li a:hover {
   color: #007aff;
+}
+.news-meta {
+  color: #666;
+  font-size: 12px;
+  margin-top: 2px;
 }
 
 /* Loading Overlay */
 #loadingOverlay {
   position: fixed;
-  top: 0; left: 0;
+  top: 0; 
+  left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0,0,0,0.5);
+  background-color: rgba(0, 0, 0, 0.5);
   display: none;
   justify-content: center;
   align-items: center;
@@ -214,30 +396,11 @@ body {
   z-index: 10000;
 }
 
-/* Buttons */
-.primary-btn, .secondary-btn {
-  background-color: #007aff;
-  border: none;
-  color: #fff;
-  padding: 4px 8px;
-  margin: 4px 0;
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: var(--main-font-size);
-  display: inline-block;
-  text-align: center;
-}
-.secondary-btn {
-  background-color: #555;
-}
-.primary-btn:hover, .secondary-btn:hover {
-  opacity: 0.9;
-}
-
 /* Watchlist styling */
 #watchlistItems {
   list-style-type: none;
   padding-left: 0;
+  font-size: 12px;
 }
 #watchlistItems li {
   cursor: pointer;

@@ -8,85 +8,93 @@
   <script src="https://unpkg.com/lightweight-charts@4.0.1/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
-  <!-- Left Pane: Search and Watchlist -->
-  <div id="left-pane">
-    <h3>Search Ticker</h3>
-    <div class="search-container">
-      <input type="text" id="tickerSearch" placeholder="Enter ticker..." />
+  <!-- Top Ribbon -->
+  <div id="topRibbon">
+    <div id="topSearchContainer">
+      <input type="text" id="tickerSearch" placeholder="Search...">
+      <button id="searchButton" class="primary-btn">Search</button>
       <div id="tickerSuggestions" class="autocomplete-suggestions"></div>
     </div>
-    <button id="searchButton" class="primary-btn">Search</button>
-    <!-- Watchlist -->
-    <h3>Watchlist</h3>
-    <ul id="watchlistItems"></ul>
-    <button id="addWatchlistItem" class="secondary-btn">Add to Watchlist</button>
-    <button id="saveConfig" class="secondary-btn">Save Config</button>
-    <button id="loadConfig" class="secondary-btn">Load Config</button>
   </div>
 
-  <!-- Center Pane -->
-  <div id="center-pane">
-    <div id="stockInfo">
-      <div id="stockExchange"></div>
-      <h2 id="stockName">Ticker - Company Name</h2>
-      <div id="stockPriceContainer">
-        <span id="stockPrice">0.00</span>
-        <span id="stockChange">0.00 (0.00%)</span>
-      </div>
-      <div id="stockDateContainer">
-        <span id="stockDate">As of Date (Market Status)</span>
+  <!-- Main Container: left, center, right panes -->
+  <div id="mainContainer">
+    <!-- Left Pane -->
+    <div id="left-pane">
+      <h3>Watchlist</h3>
+      <ul id="watchlistItems"></ul>
+      <button id="addWatchlistItem" class="secondary-btn">Add to Watchlist</button>
+      <button id="saveConfig" class="secondary-btn">Save Config</button>
+      <button id="loadConfig" class="secondary-btn">Load Config</button>
+
+      <div id="marketInfoSection">
+        <h3>Market Info</h3>
+        <ul id="marketIndexesList"></ul>
       </div>
     </div>
 
-    <div id="timeframeChartRow">
-      <div id="timeframeButtons">
-        <button data-period="1D" class="timeframe-btn">1D</button>
-        <button data-period="5D" class="timeframe-btn">5D</button>
-        <button data-period="1M" class="timeframe-btn">1M</button>
-        <button data-period="6M" class="timeframe-btn">6M</button>
-        <button data-period="YTD" class="timeframe-btn">YTD</button>
-        <button data-period="1Y" class="timeframe-btn active">1Y</button>
-        <button data-period="5Y" class="timeframe-btn">5Y</button>
-        <button data-period="MAX" class="timeframe-btn">Max</button>
-      </div>
-    </div>
-
-    <!-- Chart Options: Chart Type and Indicator Dropdowns (positioned to the right above the main chart) -->
-    <div id="chartOptions">
-      <div class="dropdown">
-        <button id="chartTypeDropdownBtn" class="nice-select">Candlestick</button>
-        <div id="chartTypeDropdown" class="dropdown-content">
-          <div class="dropdown-item" data-value="line">Line <span class="tick"></span></div>
-          <div class="dropdown-item" data-value="area">Mountain <span class="tick"></span></div>
-          <div class="dropdown-item" data-value="candlestick">Candlestick <span class="tick"></span></div>
+    <!-- Center Pane -->
+    <div id="center-pane">
+      <div id="stockInfo">
+        <div id="stockExchange"></div>
+        <h2 id="stockName">Ticker - Company Name</h2>
+        <div id="stockPriceContainer">
+          <span id="stockPrice">0.00</span>
+          <span id="stockChange">0.00 (0.00%)</span>
+        </div>
+        <div id="stockDateContainer">
+          <span id="stockDate">As of Date (Market Status)</span>
         </div>
       </div>
-      <div class="dropdown">
-        <button id="priceIndicatorDropdownBtn" class="nice-select">Price Indicators</button>
-        <div id="priceIndicatorDropdown" class="dropdown-content"></div>
-      </div>
-      <div class="dropdown">
-        <button id="specialIndicatorDropdownBtn" class="nice-select">Special Indicators</button>
-        <div id="specialIndicatorDropdown" class="dropdown-content"></div>
-      </div>
-    </div>
 
-    <div id="chartsSection">
-      <div id="mainChartContainer">
-        <div id="mainChartLegend"></div>
-        <div id="mainChart"></div>
+      <!-- Timeframe + Indicators -->
+      <div id="controlsRow">
+        <div id="timeframeButtons">
+          <button data-period="1D" class="timeframe-btn">1D</button>
+          <button data-period="5D" class="timeframe-btn">5D</button>
+          <button data-period="1M" class="timeframe-btn">1M</button>
+          <button data-period="6M" class="timeframe-btn">6M</button>
+          <button data-period="YTD" class="timeframe-btn">YTD</button>
+          <button data-period="1Y" class="timeframe-btn active">1Y</button>
+          <button data-period="5Y" class="timeframe-btn">5Y</button>
+          <button data-period="MAX" class="timeframe-btn">Max</button>
+        </div>
+        <div id="chartOptions">
+          <div class="dropdown">
+            <button id="chartTypeDropdownBtn" class="nice-select">Candlestick</button>
+            <div id="chartTypeDropdown" class="dropdown-content">
+              <div class="dropdown-item" data-value="line">Line <span class="tick">✓</span></div>
+              <div class="dropdown-item" data-value="area">Mountain <span class="tick">✓</span></div>
+              <div class="dropdown-item" data-value="candlestick">Candlestick <span class="tick">✓</span></div>
+            </div>
+          </div>
+          <div class="dropdown">
+            <button id="priceIndicatorDropdownBtn" class="nice-select">Price Indicators</button>
+            <div id="priceIndicatorDropdown" class="dropdown-content"></div>
+          </div>
+          <div class="dropdown">
+            <button id="specialIndicatorDropdownBtn" class="nice-select">Special Indicators</button>
+            <div id="specialIndicatorDropdown" class="dropdown-content"></div>
+          </div>
+        </div>
       </div>
-      <div id="volumeChartContainer">
-        <div id="volumeChart"></div>
-      </div>
-      <div id="indicatorChartContainer">
-        <div id="indicatorChartLegend"></div>
-        <div id="indicatorChart"></div>
-      </div>
-    </div>
 
-    <!-- KPI Table and News Section -->
-    <div id="kpiNewsContainer">
+      <!-- Charts -->
+      <div id="chartsSection">
+        <div id="mainChartContainer">
+          <div id="mainChartLegend"></div>
+          <div id="mainChart"></div>
+        </div>
+        <div id="volumeChartContainer">
+          <div id="volumeChart"></div>
+        </div>
+        <div id="indicatorChartContainer">
+          <div id="indicatorChartLegend"></div>
+          <div id="indicatorChart"></div>
+        </div>
+      </div>
+
+      <!-- KPI Table -->
       <div id="kpiTableContainer">
         <table id="kpiTable">
           <tbody>
@@ -141,17 +149,15 @@
           </tbody>
         </table>
       </div>
+    </div>
+
+    <!-- Right Pane -->
+    <div id="right-pane">
       <div id="newsContainer">
-        <hr/>
         <h3>Related News</h3>
         <ul id="newsList"></ul>
       </div>
     </div>
-  </div>
-
-  <!-- Right Pane -->
-  <div id="right-pane">
-    <h3>Additional Info / Watchlist</h3>
   </div>
 
   <div id="loadingOverlay">Loading...</div>
