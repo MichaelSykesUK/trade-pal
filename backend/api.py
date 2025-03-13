@@ -8,6 +8,8 @@ from tools import (
     get_technical_indicators,
     slice_indicator_data,
 )
+import yfinance as yf
+from datetime import datetime, timedelta
 
 app = FastAPI()
 
@@ -17,7 +19,7 @@ origins = [
 ]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # or restrict to your front-end domain if needed
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -76,7 +78,8 @@ def stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
     try:
         data = get_stock_data(ticker, period, interval)
         max_indicators = get_technical_indicators(
-            ticker, period="max", interval=interval)
+            ticker, period="max", interval=interval
+        )
         INDICATOR_DATA_STORE[ticker] = max_indicators
         return data
     except ValueError as e:
@@ -84,7 +87,8 @@ def stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(
-            status_code=500, detail=f"Internal Server Error: {str(e)}")
+            status_code=500, detail=f"Internal Server Error: {str(e)}"
+        )
 
 
 @app.get("/kpi/{ticker}")
@@ -103,7 +107,8 @@ def indicators(ticker: str, period: str = "1y", interval: str = "1d"):
     try:
         if ticker not in INDICATOR_DATA_STORE:
             max_indicators = get_technical_indicators(
-                ticker, period="max", interval=interval)
+                ticker, period="max", interval=interval
+            )
             INDICATOR_DATA_STORE[ticker] = max_indicators
         d = slice_indicator_data(INDICATOR_DATA_STORE[ticker], period)
         return d
@@ -112,3 +117,68 @@ def indicators(ticker: str, period: str = "1y", interval: str = "1d"):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/watchlist_data/{ticker}")
+def watchlist_data(ticker: str):
+    """
+    Fetch minimal data for watchlist: current price, daily change, YTD change, etc.
+    We'll fetch ~7 days for daily_data so we (hopefully) have at least 2 trading days.
+    """
+    response = {
+        "ticker": ticker,
+        "companyName": "Unknown",
+        "currentPrice": 0.0,
+        "dailyChange": 0.0,
+        "dailyPct": 0.0,
+        "ytdChange": 0.0,
+        "ytdPct": 0.0,
+    }
+
+    try:
+        # Fetch ~7 days for daily data
+        daily_data = yf.download(
+            ticker, period="7d", interval="1d", auto_adjust=False)
+        if daily_data.empty:
+            return response
+
+        # For YTD data
+        ytd_start = datetime(datetime.now().year, 1, 1)
+        ytd_data = yf.download(ticker, start=ytd_start,
+                               interval="1d", auto_adjust=False)
+
+        # Current price from last row
+        current_price = daily_data["Close"].iloc[-1]
+        if current_price is not None:
+            response["currentPrice"] = float(current_price)
+
+        # If we have at least 2 days, compute daily change
+        if len(daily_data) >= 2:
+            prev_close = daily_data["Close"].iloc[-2]
+            if prev_close and prev_close != 0:
+                daily_change = current_price - prev_close
+                daily_pct = (daily_change / prev_close) * 100
+                response["dailyChange"] = float(daily_change)
+                response["dailyPct"] = float(daily_pct)
+
+        # YTD change if we have data
+        if not ytd_data.empty:
+            ytd_start_price = ytd_data["Close"].iloc[0]
+            if ytd_start_price and ytd_start_price != 0:
+                ytd_change = current_price - ytd_start_price
+                ytd_pct = (ytd_change / ytd_start_price) * 100
+                response["ytdChange"] = float(ytd_change)
+                response["ytdPct"] = float(ytd_pct)
+
+        # Try to get a company name from yfinance
+        stock = yf.Ticker(ticker)
+        info = stock.info or {}
+        if "longName" in info:
+            response["companyName"] = info["longName"]
+
+    except Exception as e:
+        traceback.print_exc()
+        # Return fallback if error
+        pass
+
+    return response

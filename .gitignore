@@ -140,3 +140,4 @@ cython_debug/
 **node_modules/
 **old
 **influxdb_credentials.txt
+**temp

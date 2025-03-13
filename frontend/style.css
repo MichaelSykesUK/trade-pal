@@ -45,11 +45,25 @@ body {
   align-items: center;
 }
 
-/* The clear "X" in the search box */
+/* The text input: remove margin-right so it won't push into the Search button. */
+#tickerSearch {
+  width: 100%;
+  padding: 6px 8px;
+  padding-right: 30px; /* space for the clear X */
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 12px;
+  height: 28px;
+}
+#tickerSearch:focus {
+  border-color: #007aff;
+}
+
+/* The clear X is inside the input, near the right edge. */
 .search-clear-btn {
   display: none;
   position: absolute;
-  right: 64px; /* enough space to not overlap the "Search" button */
+  right: 12px; /* Move it inside the text field */
   top: 50%;
   transform: translateY(-50%);
   font-size: 14px;
@@ -65,20 +79,9 @@ body {
   background-color: #eee;
 }
 
-#tickerSearch {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font-size: 12px;
-  height: 28px;
-  margin-right: 8px;
-}
-#tickerSearch:focus {
-  border-color: #007aff;
-}
-
+/* The Search button is separate, with a left margin so there's space from the input. */
 #searchButton {
+  margin-left: 8px;
   background-color: #fff;
   border: 1px solid #ccc;
   border-radius: 6px;
@@ -208,7 +211,7 @@ body {
   margin: 0;
 }
 
-/* The remove watchlist "X" is now inline in the last grid column */
+/* The remove watchlist "X" is inline in the last grid column */
 .remove-watchlist-btn {
   font-size: 14px;
   border-radius: 50%;

@@ -70,17 +70,20 @@ function showLoadingOverlay() {
 }
 function hideLoadingOverlay() {
   document.getElementById("loadingOverlay").style.display = "none";
+  // Keep clear button visible if there is text
+  searchClearEl.style.display = tickerInput.value.trim().length > 0 ? "block" : "none";
 }
 
 /** Initialize charts */
 function initCharts() {
+  const scaleWidth = 60; // Fixed width for price scales
   mainChart = LightweightCharts.createChart(mainEl, {
     width: mainEl.clientWidth,
     height: mainEl.clientHeight,
     layout: { backgroundColor: "#fff", textColor: "#333" },
     grid: { vertLines: { color: "#eee" }, horzLines: { color: "#eee" } },
     timeScale: { timeVisible: true, secondsVisible: false },
-    rightPriceScale: { borderVisible: true, borderColor: "#ccc", width: 60, scaleMargins: { top: 0.05, bottom: 0.05 } },
+    rightPriceScale: { borderVisible: true, borderColor: "#ccc", width: scaleWidth, scaleMargins: { top: 0.05, bottom: 0.05 } },
   });
   volumeChart = LightweightCharts.createChart(volumeEl, {
     width: volumeEl.clientWidth,
@@ -88,7 +91,7 @@ function initCharts() {
     layout: { backgroundColor: "#fff", textColor: "#333" },
     grid: { vertLines: { color: "#eee" }, horzLines: { color: "#eee" } },
     timeScale: { timeVisible: true, secondsVisible: false },
-    rightPriceScale: { borderVisible: true, borderColor: "#ccc", width: 60, scaleMargins: { top: 0, bottom: 0 } },
+    rightPriceScale: { borderVisible: true, borderColor: "#ccc", width: scaleWidth, scaleMargins: { top: 0, bottom: 0 } },
   });
   indicatorChart = LightweightCharts.createChart(indicatorEl, {
     width: indicatorEl.clientWidth,
@@ -96,7 +99,7 @@ function initCharts() {
     layout: { backgroundColor: "#fff", textColor: "#333" },
     grid: { vertLines: { color: "#eee" }, horzLines: { color: "#eee" } },
     timeScale: { timeVisible: true, secondsVisible: false },
-    rightPriceScale: { borderVisible: true, borderColor: "#ccc", width: 60, scaleMargins: { top: 0.05, bottom: 0.05 } },
+    rightPriceScale: { borderVisible: true, borderColor: "#ccc", width: scaleWidth, scaleMargins: { top: 0.05, bottom: 0.05 } },
   });
 
   const charts = [mainChart, volumeChart, indicatorChart];
@@ -110,16 +113,6 @@ function initCharts() {
         });
       }
     });
-  });
-}
-
-/** Fix scale widths */
-function fixScaleWidths() {
-  const charts = [mainChart, volumeChart, indicatorChart];
-  const widths = charts.map(ch => ch.priceScale("right").width());
-  const maxWidth = Math.max(...widths);
-  charts.forEach(ch => {
-    ch.applyOptions({ rightPriceScale: { width: maxWidth } });
   });
 }
 
@@ -213,7 +206,6 @@ function fetchStock(ticker, timeframe) {
           } catch (err) {
             console.error("Error setting visible range:", err);
           }
-          setTimeout(() => fixScaleWidths(), 200);
         });
       }
       Promise.all([indicatorsPromise, newsPromise])
@@ -246,7 +238,6 @@ function toggleIndicator(val, isChecked) {
     } else {
       selectedIndicators.price.delete(val);
       removeIndicator(val);
-      fixScaleWidths();
       return Promise.resolve();
     }
   } else {
@@ -256,7 +247,6 @@ function toggleIndicator(val, isChecked) {
     } else {
       selectedIndicators.special.delete(val);
       removeIndicator(val);
-      fixScaleWidths();
       return Promise.resolve();
     }
   }
@@ -275,7 +265,6 @@ function fetchIndicatorData(ticker, val) {
       })
       .then(data => {
         applyIndicator(val, data);
-        fixScaleWidths();
         resolve();
       })
       .catch(err => reject(err));
@@ -509,7 +498,7 @@ function fetchNews(ticker) {
     });
 }
 
-/** Display news */
+/** Display news, now also checking item.publisher as fallback for source */
 function displayNews(news) {
   const newsList = document.getElementById("newsList");
   newsList.innerHTML = "";
@@ -528,19 +517,27 @@ function displayNews(news) {
     a.textContent = item.title || "News Story";
     textDiv.appendChild(a);
 
-    let publishTime = item.publishTime;
-    if (!publishTime && item.provider && typeof item.provider.publishTime === "number") {
-      publishTime = item.provider.publishTime;
+    const metaSpan = document.createElement("div");
+    metaSpan.classList.add("news-meta");
+
+    // Some news items have provider as array
+    let providerObj = null;
+    if (Array.isArray(item.provider) && item.provider.length > 0) {
+      providerObj = item.provider[0];
+    } else if (item.provider && typeof item.provider === "object") {
+      providerObj = item.provider;
     }
-    if (!publishTime && item.provider && typeof item.provider.publish_time === "number") {
-      publishTime = item.provider.publish_time;
-    }
+
+    let publishTime = providerObj?.publishTime || item.providerPublishTime;
     if (publishTime) {
-      const metaSpan = document.createElement("div");
-      metaSpan.classList.add("news-meta");
-      metaSpan.textContent = formatRelativeTime(publishTime);
-      textDiv.appendChild(metaSpan);
+      const relativeTime = formatRelativeTime(publishTime);
+      // fallback to item.publisher if no displayName
+      const displayName = providerObj?.displayName || item.publisher || "Unknown source";
+      metaSpan.textContent = `${relativeTime} • ${displayName}`;
+    } else {
+      metaSpan.textContent = "Unknown time • " + (item.publisher || "Unknown source");
     }
+    textDiv.appendChild(metaSpan);
 
     li.appendChild(textDiv);
 
@@ -557,8 +554,10 @@ function displayNews(news) {
   });
 }
 
-/** Format relative time => "16 hours ago" etc. */
+/** Format relative time => "16 hours ago", etc. */
 function formatRelativeTime(unixSeconds) {
+  // If publishTime is actually in ms, you'd need to handle that. 
+  // This code assumes it's in seconds:
   const nowMs = Date.now();
   const pubMs = unixSeconds * 1000;
   let diff = nowMs - pubMs;
@@ -598,12 +597,11 @@ centerAddWatchlistBtn.addEventListener("click", () => {
   }
 });
 
-/** Update watchlist UI => real daily & YTD data */
+/** Update watchlist UI => using new API endpoint */
 function updateWatchlistUI(watchlist) {
   watchlistEl.innerHTML = "";
   console.log("updateWatchlistUI => watchlist:", watchlist);
   watchlist.forEach(tkr => {
-    // row1 is Ticker, Price, Daily, YTD, Remove X
     const li = document.createElement("li");
     li.classList.add("item-container");
     li.innerHTML = `
@@ -613,7 +611,7 @@ function updateWatchlistUI(watchlist) {
         <div class="item-col-daily">--</div>
         <div class="item-col-ytd">--</div>
         <div class="item-col-remove">
-          <span class="remove-watchlist-btn">&times;</span>
+          <span class="remove-watchlist-btn">×</span>
         </div>
       </div>
       <div class="item-row2">Loading name...</div>
@@ -630,46 +628,47 @@ function updateWatchlistUI(watchlist) {
     });
     watchlistEl.appendChild(li);
 
-    // fetch daily(5D), ytd(YTD), and KPI
-    Promise.all([fetchKPI(tkr), fetchDailyData(tkr), fetchYTDData(tkr)])
-      .then(([kpi, dailyData, ytdData]) => {
-        console.log("Watchlist item fetched =>", tkr, kpi, dailyData, ytdData);
-        li.querySelector(".item-row2").textContent = kpi.companyName || "Unknown";
+    // Fetch watchlist data
+    fetch(`http://127.0.0.1:8000/watchlist_data/${encodeURIComponent(tkr)}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        console.log("watchlist_data for", tkr, data);
+        li.querySelector(".item-row2").textContent = data.companyName || "Unknown";
+
+        // If everything is zero, might be fallback
+        if (
+          data.currentPrice === 0 &&
+          data.companyName === "Unknown"
+        ) {
+          li.querySelector(".item-row2").textContent = "No data";
+          return;
+        }
 
         const priceEl = li.querySelector(".item-col-price");
         const dailyEl = li.querySelector(".item-col-daily");
-        const ytdEl   = li.querySelector(".item-col-ytd");
+        const ytdEl = li.querySelector(".item-col-ytd");
 
-        let currentPrice = 0, dailyChange = 0, dailyPct = 0;
-        if (dailyData.Close && dailyData.Close.length >= 2) {
-          const len = dailyData.Close.length;
-          currentPrice = dailyData.Close[len - 1];
-          const prev = dailyData.Close[len - 2];
-          dailyChange = currentPrice - prev;
-          dailyPct = (dailyChange / prev) * 100;
-        }
-        priceEl.textContent = currentPrice.toFixed(2);
+        priceEl.textContent = data.currentPrice.toFixed(2);
 
-        dailyEl.classList.remove("up","down");
-        const sign = (dailyChange >= 0) ? "+" : "";
-        dailyEl.textContent = `${sign}${dailyChange.toFixed(2)} (${sign}${dailyPct.toFixed(2)}%) Day`;
-        if (dailyChange > 0) dailyEl.classList.add("up");
-        else if (dailyChange < 0) dailyEl.classList.add("down");
+        dailyEl.classList.remove("up", "down");
+        const sign = (data.dailyChange >= 0) ? "+" : "";
+        dailyEl.textContent = `${sign}${data.dailyChange.toFixed(2)} (${sign}${data.dailyPct.toFixed(2)}%) Day`;
+        if (data.dailyChange > 0) dailyEl.classList.add("up");
+        else if (data.dailyChange < 0) dailyEl.classList.add("down");
 
-        let ytdChange = 0, ytdPct = 0;
-        if (ytdData.Close && ytdData.Close.length) {
-          const firstClose = ytdData.Close[0];
-          ytdChange = currentPrice - firstClose;
-          ytdPct = (ytdChange / firstClose) * 100;
-        }
-        ytdEl.classList.remove("up","down");
-        const sign2 = (ytdChange >= 0) ? "+" : "";
-        ytdEl.textContent = `${sign2}${ytdChange.toFixed(2)} (${sign2}${ytdPct.toFixed(2)}%) YTD`;
-        if (ytdChange > 0) ytdEl.classList.add("up");
-        else if (ytdChange < 0) ytdEl.classList.add("down");
+        ytdEl.classList.remove("up", "down");
+        const sign2 = (data.ytdChange >= 0) ? "+" : "";
+        ytdEl.textContent = `${sign2}${data.ytdChange.toFixed(2)} (${sign2}${data.ytdPct.toFixed(2)}%) YTD`;
+        if (data.ytdChange > 0) ytdEl.classList.add("up");
+        else if (data.ytdChange < 0) ytdEl.classList.add("down");
       })
       .catch(err => {
-        console.error("Error fetching watchlist item data for", tkr, err);
+        console.error("Error fetching watchlist data for", tkr, err);
         li.querySelector(".item-row2").textContent = "Error fetching data";
       });
   });
@@ -681,24 +680,6 @@ function removeFromWatchlist(tkr) {
   watchlist = watchlist.filter(x => x !== tkr);
   localStorage.setItem("watchlist", JSON.stringify(watchlist));
   updateWatchlistUI(watchlist);
-}
-
-/** Fetch daily => 5D => last 2 closes => daily change */
-function fetchDailyData(ticker) {
-  const url = `http://127.0.0.1:8000/stock/${ticker}?period=5D&interval=1d`;
-  return fetch(url).then(r => r.json()).catch(() => ({}));
-}
-
-/** Fetch YTD => from Jan1 => YTD change */
-function fetchYTDData(ticker) {
-  const url = `http://127.0.0.1:8000/stock/${ticker}?period=YTD&interval=1d`;
-  return fetch(url).then(r => r.json()).catch(() => ({}));
-}
-
-/** Fetch KPI => get companyName */
-function fetchKPI(ticker) {
-  const url = `http://127.0.0.1:8000/kpi/${ticker}`;
-  return fetch(url).then(r => r.json()).catch(() => ({}));
 }
 
 /** Setup Autocomplete + Clear button */
@@ -739,6 +720,7 @@ function setupAutocomplete() {
     suggestionsEl.innerHTML = "";
     suggestionsEl.style.display = "none";
     searchClearEl.style.display = "none";
+    tickerInput.focus();
   });
 
   document.addEventListener("click", e => {
@@ -755,7 +737,10 @@ function autoSuggestTickers(q) {
   return fetch(url)
     .then(r => r.json())
     .then(data => data.quotes || [])
-    .catch(err => []);
+    .catch(err => {
+      console.error("Autocomplete error:", err);
+      return [];
+    });
 }
 
 /** Populate dropdowns => default check ma50, ma150, rsi */
@@ -849,7 +834,6 @@ document.addEventListener("DOMContentLoaded", () => {
     MARKET_INDEXES.forEach(ix => {
       const li = document.createElement("li");
       li.classList.add("item-container");
-      // same grid layout: Ticker, Price, Daily, YTD, no remove X
       li.innerHTML = `
         <div class="item-row1" style="display:grid; grid-template-columns: 60px 60px 80px 80px; align-items:center; gap:4px;">
           <div class="item-col-ticker">${ix.ticker}</div>
@@ -865,52 +849,41 @@ document.addEventListener("DOMContentLoaded", () => {
       });
       marketIndexesList.appendChild(li);
 
-      Promise.all([
-        fetchMarketDaily(ix.ticker),
-        fetchMarketYTD(ix.ticker),
-        fetchKPI(ix.ticker)
-      ])
-      .then(([dailyData, ytdData, kpi]) => {
-        const row2 = li.querySelector(".item-row2");
-        if (kpi && kpi.companyName && kpi.companyName !== "N/A") {
-          row2.textContent = kpi.companyName;
-        }
-        const priceEl = li.querySelector(".item-col-price");
-        const dailyEl = li.querySelector(".item-col-daily");
-        const ytdEl   = li.querySelector(".item-col-ytd");
+      // Fetch watchlist data for market indexes
+      fetch(`http://127.0.0.1:8000/watchlist_data/${encodeURIComponent(ix.ticker)}`)
+        .then(response => response.json())
+        .then(data => {
+          li.querySelector(".item-row2").textContent = data.companyName || ix.name;
+          const priceEl = li.querySelector(".item-col-price");
+          const dailyEl = li.querySelector(".item-col-daily");
+          const ytdEl = li.querySelector(".item-col-ytd");
 
-        let currentPrice = 0, dailyChange = 0, dailyPct = 0;
-        if (dailyData.Close && dailyData.Close.length >= 2) {
-          const len = dailyData.Close.length;
-          currentPrice = dailyData.Close[len - 1];
-          const prev = dailyData.Close[len - 2];
-          dailyChange = currentPrice - prev;
-          dailyPct = (dailyChange / prev) * 100;
-        }
-        priceEl.textContent = currentPrice.toFixed(2);
+          if (data.currentPrice === 0 && data.companyName === "Unknown") {
+            // fallback no data
+            priceEl.textContent = "--";
+            dailyEl.textContent = "--";
+            ytdEl.textContent = "--";
+            return;
+          }
 
-        dailyEl.classList.remove("up","down");
-        const sign = (dailyChange >= 0) ? "+" : "";
-        dailyEl.textContent = `${sign}${dailyChange.toFixed(2)} (${sign}${dailyPct.toFixed(2)}%) Day`;
-        if (dailyChange > 0) dailyEl.classList.add("up");
-        else if (dailyChange < 0) dailyEl.classList.add("down");
+          priceEl.textContent = data.currentPrice.toFixed(2);
 
-        let ytdChange = 0, ytdPct = 0;
-        if (ytdData.Close && ytdData.Close.length) {
-          const firstClose = ytdData.Close[0];
-          ytdChange = currentPrice - firstClose;
-          ytdPct = (ytdChange / firstClose) * 100;
-        }
-        ytdEl.classList.remove("up","down");
-        const sign2 = (ytdChange >= 0) ? "+" : "";
-        ytdEl.textContent = `${sign2}${ytdChange.toFixed(2)} (${sign2}${ytdPct.toFixed(2)}%) YTD`;
-        if (ytdChange > 0) ytdEl.classList.add("up");
-        else if (ytdChange < 0) ytdEl.classList.add("down");
-      })
-      .catch(err => {
-        console.error("Market info fetch error for", ix.ticker, err);
-        li.querySelector(".item-row2").textContent = "Error fetching data";
-      });
+          dailyEl.classList.remove("up", "down");
+          const sign = (data.dailyChange >= 0) ? "+" : "";
+          dailyEl.textContent = `${sign}${data.dailyChange.toFixed(2)} (${sign}${data.dailyPct.toFixed(2)}%) Day`;
+          if (data.dailyChange > 0) dailyEl.classList.add("up");
+          else if (data.dailyChange < 0) dailyEl.classList.add("down");
+
+          ytdEl.classList.remove("up", "down");
+          const sign2 = (data.ytdChange >= 0) ? "+" : "";
+          ytdEl.textContent = `${sign2}${data.ytdChange.toFixed(2)} (${sign2}${data.ytdPct.toFixed(2)}%) YTD`;
+          if (data.ytdChange > 0) ytdEl.classList.add("up");
+          else if (data.ytdChange < 0) ytdEl.classList.add("down");
+        })
+        .catch(err => {
+          console.error("Error fetching market info for", ix.ticker, err);
+          li.querySelector(".item-row2").textContent = "Error fetching data";
+        });
     });
   }
   updateMarketInfoUI();
@@ -943,17 +916,5 @@ document.addEventListener("DOMContentLoaded", () => {
     if (mainChart) mainChart.resize(mainEl.clientWidth, mainEl.clientHeight);
     if (volumeChart) volumeChart.resize(volumeEl.clientWidth, volumeEl.clientHeight);
     if (indicatorChart) indicatorChart.resize(indicatorEl.clientWidth, indicatorEl.clientHeight);
-    setTimeout(() => fixScaleWidths(), 100);
   });
 });
-
-/** Market daily => 5D data */
-function fetchMarketDaily(ticker) {
-  const url = `http://127.0.0.1:8000/stock/${ticker}?period=5D&interval=1d`;
-  return fetch(url).then(r => r.json()).catch(() => ({}));
-}
-/** Market YTD => from Jan1 => YTD data */
-function fetchMarketYTD(ticker) {
-  const url = `http://127.0.0.1:8000/stock/${ticker}?period=YTD&interval=1d`;
-  return fetch(url).then(r => r.json()).catch(() => ({}));
-}
