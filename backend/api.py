@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+import uvicorn
 import traceback
 import requests
 from tools import (
@@ -13,10 +15,6 @@ from datetime import datetime, timedelta
 
 app = FastAPI()
 
-origins = [
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # or restrict to your front-end domain if needed
@@ -182,3 +180,14 @@ def watchlist_data(ticker: str):
         pass
 
     return response
+
+
+# ------------------------------------------------------------------------------
+# Mount static files (if you have a frontend build to serve)
+# ------------------------------------------------------------------------------
+app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+
+
+if __name__ == "__main__":
+    # Run the API server on localhost port 8000.
+    uvicorn.run(app, host="127.0.0.1", port=8000)

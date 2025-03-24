@@ -1,4 +1,4 @@
-# TradePal Financial Markets Application
+# 'TradePal' Financial Markets Application
 
 This guide will help you set up and run the application, which consists of a backend API and a frontend user interface.
 
@@ -10,7 +10,7 @@ This guide will help you set up and run the application, which consists of a bac
 
 ---
 
-## Backend Setup
+## Setup
 
 ### 1. Create a Virtual Environment (Recommended)
 ```bash
@@ -19,22 +19,12 @@ source venv/bin/activate  # Linux/MacOS
 venv\Scripts\activate   # Windows
 ```
 
-### 2. Install Dependencies
+### 2. Install Backend Dependencies
 ```bash
-pip install -r requirements.txt
+pip install -r backend/requirements.txt
 ```
 
-### 3. Run the Backend API
-```bash
-python api.py
-```
-By default, the backend will be available at `http://127.0.0.1:8000`.
-
----
-
-## Frontend Setup
-
-### 1. Install Node.js Packages
+### 3. Install Node.js Packages
 ```bash
 cd frontend
 npm install
@@ -42,21 +32,11 @@ npm install
 
 ### 2. Run the Project
 ```bash
-cd frontend
-npm run start
+cd ..
+python backend/api.py
 ```
-
-### 3. Serve the Frontend Locally
-Install `http-server` globally if not already done:
-```bash
-npm install -g http-server
-```
-Start the server:
-```bash
-cd frontend
-http-server .
-```
-The frontend will be available at `http://127.0.0.1:8080`.
+By default, the backend will be available at `http://127.0.0.1:8000`.
+`
 
 ---
 
