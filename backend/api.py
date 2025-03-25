@@ -11,13 +11,13 @@ from tools import (
     slice_indicator_data,
 )
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # or restrict to your front-end domain if needed
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -174,20 +174,16 @@ def watchlist_data(ticker: str):
         if "longName" in info:
             response["companyName"] = info["longName"]
 
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
-        # Return fallback if error
         pass
 
     return response
 
 
-# ------------------------------------------------------------------------------
-# Mount static files (if you have a frontend build to serve)
-# ------------------------------------------------------------------------------
+# Mount static files
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
 
 
 if __name__ == "__main__":
-    # Run the API server on localhost port 8000.
     uvicorn.run(app, host="127.0.0.1", port=8000)
