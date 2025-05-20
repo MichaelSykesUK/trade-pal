@@ -1,18 +1,20 @@
+# backend/api.py
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-import uvicorn
 import traceback
 import requests
 import yfinance as yf
-from yfinance.exceptions import YFRateLimitError
+
 from backend.tools import (
     get_stock_data,
     get_kpi_data,
     get_technical_indicators,
     slice_indicator_data,
 )
+from backend.ml import get_available_models, run_ml_model
 
 app = FastAPI()
 
@@ -66,9 +68,9 @@ def stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
     global INDICATOR_DATA_STORE
     try:
         data = get_stock_data(ticker, period, interval)
-        max_indicators = get_technical_indicators(
+        max_ind = get_technical_indicators(
             ticker, period="max", interval=interval)
-        INDICATOR_DATA_STORE[ticker] = max_indicators
+        INDICATOR_DATA_STORE[ticker] = max_ind
         return data
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -104,52 +106,47 @@ def indicators(ticker: str, period: str = "1y", interval: str = "1d"):
 
 @app.get("/watchlist_data/{ticker}")
 def watchlist_data(ticker: str):
-    print(f"Fetching data for: {ticker}")
     try:
+        from yfinance.exceptions import YFRateLimitError
         import time
 
         yf_data = yf.Ticker(ticker)
-        # Retry history fetch on rate limit
         max_retries = 3
         backoff = 0.5
         hist = None
-        for attempt in range(max_retries):
+        for _ in range(max_retries):
             try:
                 hist = yf_data.history(period="7d", interval="1d")
                 break
             except YFRateLimitError:
-                print(
-                    f"Rate limit on history for {ticker}, retrying in {backoff}s...")
                 time.sleep(backoff)
                 backoff *= 2
-        # Fallback if still failed
+
         if hist is None or hist.empty or "Close" not in hist.columns:
             raise ValueError("Empty or malformed historical data")
 
         latest = hist.iloc[-1]
         prev = hist.iloc[-2] if len(hist) > 1 else latest
 
-        current_price = float(latest.get("Close", 0.0))
-        prev_close = float(prev.get("Close", 0.0))
+        current_price = float(latest["Close"])
+        prev_close = float(prev["Close"])
         daily_change = current_price - prev_close
         daily_pct = (daily_change / prev_close * 100) if prev_close else 0.0
 
-        ytd_price = float(hist.iloc[0].get("Close", current_price))
+        ytd_price = float(hist.iloc[0]["Close"])
         ytd_change = current_price - ytd_price
         ytd_pct = (ytd_change / ytd_price * 100) if ytd_price else 0.0
 
-        # Retry info fetch on rate limit
-        info = {}
         backoff = 0.5
-        for attempt in range(max_retries):
+        info = {}
+        for _ in range(max_retries):
             try:
                 info = yf_data.info or {}
                 break
             except YFRateLimitError:
-                print(
-                    f"Rate limit on info for {ticker}, retrying in {backoff}s...")
                 time.sleep(backoff)
                 backoff *= 2
+
         name = info.get("shortName") or info.get("longName") or "Unknown"
 
         return {
@@ -160,9 +157,7 @@ def watchlist_data(ticker: str):
             "ytdChange": ytd_change,
             "ytdPct": ytd_pct,
         }
-
-    except Exception as e:
-        print(f"[ERROR] {ticker}: {e}")
+    except Exception:
         return JSONResponse(status_code=200, content={
             "companyName": "Unknown",
             "currentPrice": 0.0,
@@ -173,8 +168,46 @@ def watchlist_data(ticker: str):
         })
 
 
-# Mount static files last, after API routes
+@app.get("/ml/models")
+def ml_models():
+    return get_available_models()
+
+
+@app.get("/ml/{ticker}")
+def ml_predictions(
+    ticker: str,
+    period: str = "1y",
+    interval: str = "1d",
+    model: str = "XGBoost",
+    pre_days: int = 10,
+    test_days: int = 10,
+    ma1: int = 50,
+    ma2: int = 150,
+    ema1: int = 50,
+    arima_order: str = "5,1,0",
+    scaler_type: str = "standard",
+):
+    try:
+        order = tuple(int(x) for x in arima_order.split(","))
+        flags = {f: True for f in [
+            "ma50", "ma150", "ema50", "momentum", "rsi",
+            "upper_band", "lower_band", "volatility",
+            "macd", "macd_signal", "atr", "obv"
+        ]}
+        return run_ml_model(
+            ticker, period, interval,
+            model, pre_days, test_days,
+            ma1, ma2, ema1, order,
+            scaler_type, flags
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Mount static files last
 app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
 
+
 if __name__ == "__main__":
+    import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)

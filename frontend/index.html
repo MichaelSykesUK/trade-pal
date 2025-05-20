@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,17 +11,14 @@
 <body>
   <!-- Top Ribbon -->
   <div id="topRibbon">
-    <!-- Left area: Centered search bar -->
     <div id="topRibbonLeft">
       <div id="topSearchContainer">
         <input type="text" id="tickerSearch" placeholder="Search...">
-        <!-- The clear "X" inside the text box -->
         <div id="searchClear" class="search-clear-btn">&times;</div>
         <button id="searchButton" class="primary-btn">Search</button>
         <div id="tickerSuggestions" class="autocomplete-suggestions"></div>
       </div>
     </div>
-    <!-- Right area: Save/Load config -->
     <div id="topRibbonRight">
       <button id="saveConfig" class="secondary-btn">Save Config</button>
       <button id="loadConfig" class="secondary-btn">Load Config</button>
@@ -45,12 +43,10 @@
     <div id="center-pane">
       <div id="stockInfo">
         <div id="stockExchange"></div>
-        <!-- Name + "Add to Watchlist" on the same line -->
         <div id="stockNameRow">
           <h2 id="stockName">Company Name (TICKER)</h2>
           <button id="centerAddWatchlist" class="semi-round-btn">Add to Watchlist</button>
         </div>
-        <!-- Price container below that -->
         <div id="stockPriceContainer">
           <span id="stockPrice">0.00</span>
           <span id="stockChange">0.00 (0.00%)</span>
@@ -88,6 +84,16 @@
             <button id="specialIndicatorDropdownBtn" class="nice-select">Special Indicators</button>
             <div id="specialIndicatorDropdown" class="dropdown-content"></div>
           </div>
+          <!-- NEW: ML Controls -->
+          <div class="dropdown">
+            <button id="mlMethodDropdownBtn" class="nice-select">ML Method</button>
+            <div id="mlMethodDropdown" class="dropdown-content"></div>
+          </div>
+          <div class="dropdown">
+            <button id="mlFeaturesDropdownBtn" class="nice-select">ML Features</button>
+            <div id="mlFeaturesDropdown" class="dropdown-content"></div>
+          </div>
+          <button id="runMLButton" class="primary-btn">Run ML</button>
         </div>
       </div>
 
@@ -151,10 +157,7 @@
             <tr>
               <td><strong>Avg Volume:</strong></td>
               <td id="avgVolume">N/A</td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
+              <td></td><td></td><td></td><td></td>
             </tr>
           </tbody>
         </table>
