@@ -41,29 +41,28 @@ body {
   position: relative;
   width: 100%;
   max-width: 400px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
 }
 
-/* The text input: remove margin-right so it won't push into the Search button. */
 #tickerSearch {
   width: 100%;
-  padding: 6px 8px;
-  padding-right: 30px; /* space for the clear X */
+  padding: 8px 36px 8px 10px; /* add more vertical padding */
   border: 1px solid #ccc;
   border-radius: 6px;
-  font-size: 12px;
-  height: 28px;
+  font-size: 14px; /* bump font size */
+  height: 36px;     /* increase height */
+  box-sizing: border-box;
 }
+
 #tickerSearch:focus {
   border-color: #007aff;
 }
 
-/* The clear X is inside the input, near the right edge. */
 .search-clear-btn {
-  display: none;
+  display: none; /* hide by default */
   position: absolute;
-  right: 12px; /* Move it inside the text field */
+  right: 90px;
   top: 50%;
   transform: translateY(-50%);
   font-size: 14px;
@@ -71,10 +70,13 @@ body {
   border-radius: 50%;
   width: 20px;
   height: 20px;
+  line-height: 20px;
   text-align: center;
-  line-height: 18px;
+  background: #f0f0f0;
+  z-index: 2;
   color: #333;
 }
+
 .search-clear-btn:hover {
   background-color: #eee;
 }
@@ -85,11 +87,12 @@ body {
   background-color: #fff;
   border: 1px solid #ccc;
   border-radius: 6px;
-  font-size: 12px;
-  height: 28px;
-  padding: 4px 8px;
+  font-size: 14px;
+  height: 36px;
+  padding: 6px 12px;
   cursor: pointer;
 }
+
 #searchButton:hover {
   background-color: #eee;
 }
