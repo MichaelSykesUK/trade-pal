@@ -12,6 +12,8 @@ const API_BASE = "";  // leave blank if FastAPI is on the same origin
 //
 let currentLoadedTicker = null;
 
+
+
 // Charts
 const mainEl       = document.getElementById("mainChart");
 const volumeEl     = document.getElementById("volumeChart");
@@ -234,25 +236,31 @@ function fetchStock(ticker, timeframe) {
   showLoadingOverlay();
 
   const stockUrl = `${API_BASE}/stock/${ticker}?period=${timeframe}&interval=1d`;
-  const kpiUrl   = `${API_BASE}/kpi/${ticker}`;
+  const kpiUrl = `${API_BASE}/kpi/${ticker}`;
 
   Promise.all([fetch(stockUrl), fetch(kpiUrl)])
     .then(([sRes, kRes]) => {
-      if (!sRes.ok) throw new Error("Stock fetch error: " + sRes.statusText);
-      if (!kRes.ok) throw new Error("KPI fetch error: " + kRes.statusText);
+      if (!sRes.ok) {
+        if (sRes.status === 429) throw new Error("Rate limit exceeded. Please try again later.");
+        throw new Error(`Stock fetch error: ${sRes.statusText}`);
+      }
+      if (!kRes.ok) {
+        if (kRes.status === 429) throw new Error("Rate limit exceeded. Please try again later.");
+        throw new Error(`KPI fetch error: ${kRes.statusText}`);
+      }
       return Promise.all([sRes.json(), kRes.json()]);
     })
     .then(([stockData, kpiData]) => {
+      let lastStockData = null;
       const { firstTime, lastTime } = renderMainAndVolume(stockData);
       updateTopInfo(ticker, stockData, kpiData);
 
-      // clear old overlays
-      overlayMap   = {};
+      overlayMap = {};
       indicatorMap = {};
-      document.getElementById("mainChartLegend").innerHTML      = "";
+      document.getElementById("mainChartLegend").innerHTML = "";
       document.getElementById("indicatorChartLegend").innerHTML = "";
 
-      const indPromise  = reAddAllIndicators(ticker);
+      const indPromise = reAddAllIndicators(ticker);
       const newsPromise = fetchNews(ticker);
 
       indPromise.then(() => {
@@ -266,7 +274,7 @@ function fetchStock(ticker, timeframe) {
     })
     .catch(err => {
       console.error(err);
-      alert("❌ Error loading " + ticker + ": " + err.message);
+      alert(`❌ Error loading ${ticker}: ${err.message}`);
       hideLoadingOverlay();
     });
 }
@@ -450,20 +458,34 @@ function populateMLDropdowns() {
   });
 }
 
+
 function fetchMLData(ticker, model, features) {
+  // 0) Must have picked an ML Method
+  if (!model) {
+    return alert("❌ Please select an ML Method before running.");
+  }
+
+  // 1) Must have at least one feature
+  if (!Object.values(features).some(f => f)) {
+    return alert("❌ Select at least one ML Feature before running.");
+  }
+
   showLoadingOverlay();
   const timeframe = document.querySelector("#timeframeButtons .active").dataset.period;
-  const url =
-    `${API_BASE}/ml/${ticker}` +
-    `?period=${timeframe}` +
-    `&interval=1d` +
-    `&model=${encodeURIComponent(model)}` +
-    `&features=${encodeURIComponent(JSON.stringify(features))}`;
+  const featsJson  = encodeURIComponent(JSON.stringify(features));
+  const url = `${API_BASE}/ml/${ticker}`
+            + `?period=${timeframe}`
+            + `&interval=1d`
+            + `&model=${encodeURIComponent(model)}`
+            + `&features=${featsJson}`;
 
   fetch(url)
-    .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
+    .then(r => {
+      if (!r.ok) throw new Error(r.statusText);
+      return r.json();
+    })
     .then(data => {
-      applyMLOverlay(model, data);
+      applyMLOverlay("ML", data.projected);
       hideLoadingOverlay();
     })
     .catch(err => {
@@ -473,23 +495,45 @@ function fetchMLData(ticker, model, features) {
     });
 }
 
-function applyMLOverlay(name, data) {
-  if (overlayMap[name]) {
-    mainChart.removeSeries(overlayMap[name]);
-    removeLegendItem("mainChartLegend", name);
+
+function applyMLOverlay(key, projected) {
+  if (!lastStockData) {
+    return alert("No stock data loaded yet!");
   }
-  const dates = data.Date       || data.dates       || [];
-  const preds = data.Prediction || data.predictions || [];
-  const seriesData = dates.map((d,i) => ({
-    time:  Math.floor(new Date(d).getTime() / 1000),
-    value: preds[i]
+
+  // 1) Rebuild main chart as a LINE series for *actual* closes
+  if (mainSeries) {
+    mainChart.removeSeries(mainSeries);
+  }
+  mainSeries = mainChart.addLineSeries();
+  const actual = lastStockData.Date.map((d,i) => ({
+    time: Math.floor(new Date(d).getTime()/1000),
+    value: lastStockData.Close[i],
   }));
-  const color  = "#AA00AA";
-  const series = mainChart.addLineSeries({ color, lineWidth: 2 });
-  series.setData(seriesData);
-  overlayMap[name] = series;
-  addLegendItem("mainChartLegend", name, color);
+  mainSeries.setData(actual);
+
+  // 2) Overlay the ML projection
+  if (overlayMap[key]) {
+    mainChart.removeSeries(overlayMap[key]);
+    delete overlayMap[key];
+  }
+  const mlSeries = mainChart.addLineSeries({
+    color: "#AA00AA",
+    lineWidth: 2,
+    lineStyle: 1,
+  });
+  const mlData = projected.Date.map((d,i) => ({
+    time: Math.floor(new Date(d).getTime()/1000),
+    value: projected.Predicted[i] ?? projected.projected[i]
+  }));
+  mlSeries.setData(mlData);
+  overlayMap[key] = mlSeries;
+
+  // 3) Update the legend
+  removeLegendItem("mainChartLegend", key);
+  addLegendItem("mainChartLegend", key, "#AA00AA");
 }
+
 
 // small sleep helper
 function sleep(ms) {
@@ -506,12 +550,9 @@ async function updateMarketInfoUI() {
     { ticker: "^N225", name: "Nikkei 225" }
   ];
 
-  // clear out the old list
   marketIndexesList.innerHTML = "";
 
-  // fetch one at a time to avoid rate‐limit bursts
   for (const ix of MARKET_INDEXES) {
-    // build the LI scaffold
     const li = document.createElement("li");
     li.classList.add("item-container");
     li.innerHTML = `
@@ -523,56 +564,65 @@ async function updateMarketInfoUI() {
       </div>
       <div class="item-row2">${ix.name}</div>
     `;
+    marketIndexesList.appendChild(li);
 
-    // clicking it still loads the full chart
+    // ← grab these *after* injecting the innerHTML
+    const row2    = li.querySelector(".item-row2");
+    const priceEl = li.querySelector(".item-col-price");
+    const dailyEl = li.querySelector(".item-col-daily");
+    const ytdEl   = li.querySelector(".item-col-ytd");
+
     li.addEventListener("click", () => {
       tickerInput.value = ix.ticker;
       fetchStock(ix.ticker, "1Y");
     });
 
-    // add it to the DOM before we await
-    marketIndexesList.appendChild(li);
-
-    // now actually fetch the data, with retry
     try {
       const data = await fetchWithRetry(
         `${API_BASE}/watchlist_data/${encodeURIComponent(ix.ticker)}`,
-        3,      // retries
-        500     // initial backoff ms
+        3,    // retries
+        1000  // initial backoff ms
       );
 
-      // pull out the cells
-      const row2    = li.querySelector(".item-row2");
-      const priceEl = li.querySelector(".item-col-price");
-      const dailyEl = li.querySelector(".item-col-daily");
-      const ytdEl   = li.querySelector(".item-col-ytd");
-
-      // company name (shortName/longName) comes back here
       row2.textContent = data.companyName || ix.name;
 
-      // only overwrite the dashes if we got a non‐zero price
       if (data.currentPrice != null && data.currentPrice !== 0) {
-        // today's price
         priceEl.textContent = data.currentPrice.toFixed(2);
 
-        // daily change
         const signD = data.dailyChange >= 0 ? "+" : "";
         dailyEl.textContent = `${signD}${data.dailyChange.toFixed(2)} (${signD}${data.dailyPct.toFixed(2)}%)`;
-        dailyEl.classList.toggle("up",   data.dailyChange >  0);
-        dailyEl.classList.toggle("down", data.dailyChange <  0);
+        dailyEl.classList.toggle("up",   data.dailyChange > 0);
+        dailyEl.classList.toggle("down", data.dailyChange < 0);
 
-        // YTD change
-        const signY = data.ytdChange   >= 0 ? "+" : "";
+        const signY = data.ytdChange >= 0 ? "+" : "";
         ytdEl.textContent = `${signY}${data.ytdChange.toFixed(2)} (${signY}${data.ytdPct.toFixed(2)}%)`;
-        ytdEl.classList.toggle("up",   data.ytdChange >  0);
-        ytdEl.classList.toggle("down", data.ytdChange <  0);
+        ytdEl.classList.toggle("up",   data.ytdChange > 0);
+        ytdEl.classList.toggle("down", data.ytdChange < 0);
       }
-    }
-    catch (err) {
+
+    } catch (err) {
       console.error(`Market fetch failed for ${ix.ticker}:`, err);
-      // leave the “--” or show an error
+      row2.textContent = "Error fetching data";
+    }
+
+    // small delay to avoid rapid‐fire rate limits
+    await sleep(1000);
+  }
+}
+
+async function updateWatchlistUI(wl) {
+  watchlistEl.innerHTML = "";
+  for (const tkr of wl) {
+    const li = createWatchlistItem(tkr);
+    watchlistEl.appendChild(li);
+    try {
+      const data = await fetchWithRetry(`${API_BASE}/watchlist_data/${encodeURIComponent(tkr)}`);
+      updateWatchlistItem(li, data);
+    } catch (e) {
+      console.error(e);
       li.querySelector(".item-row2").textContent = "Error fetching data";
     }
+    await sleep(1000); // Increased delay between requests
   }
 }
 
@@ -758,22 +808,6 @@ centerAddWatchlistBtn.addEventListener("click", () => {
     updateWatchlistUI(wl);
   }
 });
-
-async function updateWatchlistUI(wl) {
-  watchlistEl.innerHTML = "";
-  for (const tkr of wl) {
-    const li = createWatchlistItem(tkr);
-    watchlistEl.appendChild(li);
-    try {
-      const data = await fetchWithRetry(`${API_BASE}/watchlist_data/${encodeURIComponent(tkr)}`);
-      updateWatchlistItem(li, data);
-    } catch (e) {
-      console.error(e);
-      li.querySelector(".item-row2").textContent = "Error fetching data";
-    }
-    await sleep(200);
-  }
-}
 
 function fetchWithRetry(url, retries = 3, delay = 500) {
   return new Promise((res, rej) => {
