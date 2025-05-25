@@ -250,18 +250,24 @@ def ml_predictions(
     ema1: int = 50,
     arima_order: str = "5,1,0",
     scaler_type: str = "standard",
-    features: str = None,  # JSON string
+    features: str = None,
 ):
-    # 1) Normalize period
+    # Normalize period for yfinance
     yf_period = get_extended_period(period)
 
-    # 2) Parse ARIMA order
+    # Parse ARIMA order
     try:
         order = tuple(int(x) for x in arima_order.split(","))
     except Exception:
         raise HTTPException(400, "Invalid arima_order; must be 'p,d,q'.")
 
-    # 3) Parse and validate feature flags
+    # Quick check for historical data
+    tmp = yf.download(ticker, period=yf_period, interval=interval)
+    if tmp.empty:
+        raise HTTPException(
+            400, f"No historical data found for '{ticker}' over period '{period}'")
+
+    # Parse and validate feature flags
     if not features:
         raise HTTPException(400, "You must select at least one feature.")
     try:
@@ -271,7 +277,7 @@ def ml_predictions(
     if not any(flags.values()):
         raise HTTPException(400, "You must select at least one feature.")
 
-    # 4) Retry loop on Yahoo rate‐limit
+    # Retry loop on Yahoo rate-limit
     max_retries = 3
     backoff = 0.5
     for attempt in range(max_retries):
@@ -296,6 +302,8 @@ def ml_predictions(
                 backoff *= 2
                 continue
             raise HTTPException(503, "Rate limit exceeded; try again shortly.")
+        except ValueError as e:
+            raise HTTPException(400, detail=str(e))
         except Exception as e:
             traceback.print_exc()
             raise HTTPException(500, f"ML Error: {e}")

@@ -12,8 +12,6 @@ const API_BASE = "";  // leave blank if FastAPI is on the same origin
 //
 let currentLoadedTicker = null;
 
-
-
 // Charts
 const mainEl       = document.getElementById("mainChart");
 const volumeEl     = document.getElementById("volumeChart");
@@ -51,7 +49,8 @@ let mainChart, volumeChart, indicatorChart;
 let mainSeries, volumeSeries;
 let overlayMap   = {};
 let indicatorMap = {};
-
+// stash the last-loaded real data so ML can re-plot it
+let lastStockData = null;
 let selectedIndicators = {
   price:   new Set(),
   special: new Set()
@@ -236,7 +235,7 @@ function fetchStock(ticker, timeframe) {
   showLoadingOverlay();
 
   const stockUrl = `${API_BASE}/stock/${ticker}?period=${timeframe}&interval=1d`;
-  const kpiUrl = `${API_BASE}/kpi/${ticker}`;
+  const kpiUrl   = `${API_BASE}/kpi/${ticker}`;
 
   Promise.all([fetch(stockUrl), fetch(kpiUrl)])
     .then(([sRes, kRes]) => {
@@ -251,16 +250,19 @@ function fetchStock(ticker, timeframe) {
       return Promise.all([sRes.json(), kRes.json()]);
     })
     .then(([stockData, kpiData]) => {
-      let lastStockData = null;
+      // ****** KEY CHANGE ******
+      // overwrite the top-level var so ML overlay can see it
+      lastStockData = stockData;
+
       const { firstTime, lastTime } = renderMainAndVolume(stockData);
       updateTopInfo(ticker, stockData, kpiData);
 
       overlayMap = {};
       indicatorMap = {};
-      document.getElementById("mainChartLegend").innerHTML = "";
+      document.getElementById("mainChartLegend").innerHTML      = "";
       document.getElementById("indicatorChartLegend").innerHTML = "";
 
-      const indPromise = reAddAllIndicators(ticker);
+      const indPromise  = reAddAllIndicators(ticker);
       const newsPromise = fetchNews(ticker);
 
       indPromise.then(() => {
@@ -270,7 +272,9 @@ function fetchStock(ticker, timeframe) {
           );
         }
       });
-      Promise.allSettled([indPromise, newsPromise]).finally(hideLoadingOverlay);
+
+      Promise.allSettled([indPromise, newsPromise])
+             .finally(hideLoadingOverlay);
     })
     .catch(err => {
       console.error(err);
@@ -278,6 +282,7 @@ function fetchStock(ticker, timeframe) {
       hideLoadingOverlay();
     });
 }
+
 
 //
 // === Indicators ===
@@ -460,19 +465,16 @@ function populateMLDropdowns() {
 
 
 function fetchMLData(ticker, model, features) {
-  // 0) Must have picked an ML Method
   if (!model) {
     return alert("❌ Please select an ML Method before running.");
   }
-
-  // 1) Must have at least one feature
   if (!Object.values(features).some(f => f)) {
     return alert("❌ Select at least one ML Feature before running.");
   }
 
   showLoadingOverlay();
   const timeframe = document.querySelector("#timeframeButtons .active").dataset.period;
-  const featsJson  = encodeURIComponent(JSON.stringify(features));
+  const featsJson = encodeURIComponent(JSON.stringify(features));
   const url = `${API_BASE}/ml/${ticker}`
             + `?period=${timeframe}`
             + `&interval=1d`
@@ -480,60 +482,71 @@ function fetchMLData(ticker, model, features) {
             + `&features=${featsJson}`;
 
   fetch(url)
-    .then(r => {
-      if (!r.ok) throw new Error(r.statusText);
-      return r.json();
+    .then(async r => {
+      const payload = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        // Surface the backend’s detail message if present
+        const msg = payload.detail || payload.error || r.statusText;
+        throw new Error(msg);
+      }
+      return payload;
     })
     .then(data => {
       applyMLOverlay("ML", data.projected);
-      hideLoadingOverlay();
     })
     .catch(err => {
-      console.error(err);
-      alert("❌ ML failed: " + err.message);
-      hideLoadingOverlay();
-    });
+      console.error("ML call failed:", err);
+      alert("❌ ML error: " + err.message);
+    })
+    .finally(hideLoadingOverlay);
 }
-
 
 function applyMLOverlay(key, projected) {
   if (!lastStockData) {
     return alert("No stock data loaded yet!");
   }
 
-  // 1) Rebuild main chart as a LINE series for *actual* closes
-  if (mainSeries) {
-    mainChart.removeSeries(mainSeries);
-  }
-  mainSeries = mainChart.addLineSeries();
-  const actual = lastStockData.Date.map((d,i) => ({
-    time: Math.floor(new Date(d).getTime()/1000),
-    value: lastStockData.Close[i],
-  }));
-  mainSeries.setData(actual);
-
-  // 2) Overlay the ML projection
+  // 1) Remove any old ML overlay
   if (overlayMap[key]) {
     mainChart.removeSeries(overlayMap[key]);
     delete overlayMap[key];
+    removeLegendItem("mainChartLegend", key);
   }
+
+  // 2) Find the timestamp of the last real data point
+  const lastRealDateStr = lastStockData.Date[lastStockData.Date.length - 1];
+  const lastRealTs = Math.floor(new Date(lastRealDateStr).getTime() / 1000);
+
+  // 3) Build & filter the projection to only days AFTER lastRealTs
+  const projPoints = projected.Date.map((d, i) => ({
+    time:  Math.floor(new Date(d).getTime() / 1000),
+    value: projected.Predicted[i],
+  })).filter(pt => pt.time > lastRealTs);
+
+  if (!projPoints.length) {
+    return alert("No projected points beyond the last real date.");
+  }
+
+  // 4) Add the ML projection as a single line series
   const mlSeries = mainChart.addLineSeries({
     color: "#AA00AA",
     lineWidth: 2,
     lineStyle: 1,
   });
-  const mlData = projected.Date.map((d,i) => ({
-    time: Math.floor(new Date(d).getTime()/1000),
-    value: projected.Predicted[i] ?? projected.projected[i]
-  }));
-  mlSeries.setData(mlData);
+  mlSeries.setData(projPoints);
   overlayMap[key] = mlSeries;
-
-  // 3) Update the legend
-  removeLegendItem("mainChartLegend", key);
   addLegendItem("mainChartLegend", key, "#AA00AA");
-}
 
+  // 5) Shift the X-axis window right so the new points are visible
+  const vr = mainChart.timeScale().getVisibleRange();
+  if (vr && vr.from != null && vr.to != null) {
+    const extra = projPoints[projPoints.length - 1].time - lastRealTs;
+    mainChart.timeScale().setVisibleRange({
+      from: vr.from,
+      to:   vr.to + extra,
+    });
+  }
+}
 
 // small sleep helper
 function sleep(ms) {

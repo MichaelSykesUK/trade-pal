@@ -334,32 +334,33 @@ class StockPredictionModel:
         self.X = X
         self.X_weighted = X_weighted
 
-    def update_projected_data(
-        self, prices, high_prices, low_prices, volumes, prediction
-    ):
+    def update_projected_data(self, prices, high_prices, low_prices, volumes, prediction):
         """
-        Update projected data based on the new prediction.
+        Append a single day of projected data, preserving the DatetimeIndex.
         """
+        last_date = prices.index[-1]
+        next_date = last_date + pd.Timedelta(days=1)
+
+        # carry forward volume
         volumes = pd.concat(
-            [volumes, pd.Series([volumes.iloc[-1]])], ignore_index=True)
+            [volumes, pd.Series([volumes.iloc[-1]], index=[next_date])]
+        )
+        # estimate high/low around the prediction
+        high_delta = high_prices.iloc[-1] - prices.iloc[-1]
+        low_delta = prices.iloc[-1] - low_prices.iloc[-1]
         high_prices = pd.concat(
-            [
-                high_prices,
-                pd.Series(
-                    [prediction + (high_prices.iloc[-1] - prices.iloc[-1])]),
-            ],
-            ignore_index=True,
+            [high_prices, pd.Series(
+                [prediction + high_delta], index=[next_date])]
         )
         low_prices = pd.concat(
-            [
-                low_prices,
-                pd.Series(
-                    [prediction - (prices.iloc[-1] - low_prices.iloc[-1])]),
-            ],
-            ignore_index=True,
+            [low_prices, pd.Series(
+                [prediction - low_delta], index=[next_date])]
         )
+        # append the predicted close
         prices = pd.concat(
-            [prices, pd.Series([prediction])], ignore_index=True)
+            [prices, pd.Series([prediction], index=[next_date])]
+        )
+
         return prices, high_prices, low_prices, volumes
 
     def recalculate_features(self, prices, high_prices, low_prices, volumes):
@@ -567,10 +568,11 @@ def run_ml_model(
         ema1=ema1,
         arima_order=arima_order,
     )
-    proj = m.iterate_projections()
-    # test = m.iterate_test()
+    predictions = m.iterate_projections()
 
-    def series_to_dict(s: pd.Series):
-        return {"Date": s.index.astype(str).tolist(), s.name: s.tolist()}
-
-    return {"projected": series_to_dict(proj), "test": series_to_dict(test)}
+    return {
+        "projected": {
+            "Date":      predictions.index.astype(str).tolist(),
+            "Predicted": predictions.tolist()
+        }
+    }
