@@ -1,22 +1,29 @@
-# 'TradePal' Financial Markets Application
+# TradePal – Financial Markets Application
 
-This guide will help you set up and run the application, which consists of a backend API and a frontend user interface.
+TradePal is a full-stack financial analytics app that provides interactive stock charts, market indicators, and ML-based forecasting — all powered by Yahoo Finance and FastAPI.
 
-## Prerequisites
+## 🚀 Features
+
+- Live stock charting with technical overlays
+- Market overview and customizable watchlist
+- ML-driven price forecasting (XGBoost, ARIMA, etc.)
+- Auto-complete ticker search
+- Real-time financial news
+
+## 📦 Requirements
 
 - **Python 3.8+**
-- **Node.js 14+** (includes npm)
-- **Virtual Environment (Recommended)**
+- **Virtual environment** (recommended)
 
----
+## ⚙️ Setup Instructions
 
-## Setup
-
-### 1. Create a Virtual Environment (Recommended)
+### 1. Clone the Repository and Create a Virtual Environment
 ```bash
+git clone https://github.com/your-org/tradepal.git
+cd tradepal
 python -m venv venv
-source venv/bin/activate  # Linux/MacOS
-venv\Scripts\activate   # Windows
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
 ```
 
 ### 2. Install Backend Dependencies
@@ -24,56 +31,59 @@ venv\Scripts\activate   # Windows
 pip install -r backend/requirements.txt
 ```
 
-### 3. Install Node.js Packages
+## ▶️ Run the Application
+
 ```bash
-cd frontend
-npm install
+uvicorn backend.api:app --reload
 ```
 
-### 2. Run the Project
+By default, the application will be available at:
+
 ```bash
-cd ..
-python backend/api.py
-```
-By default, the backend will be available at `http://127.0.0.1:8000`.
-`
-
----
-
-## Testing the Application
-1. Start both the backend and frontend servers.
-2. Open a browser and navigate to `http://127.0.0.1:8080`.
-3. Test API interactions through the user interface.
-
----
-
-## File Structure
-```
-/doc-query-app
-  |-- backend/                  # Backend project directory
-      |-- tools.py              # Backend tools
-      |-- api.py                # Backend API script
-      |-- requirements.txt      # Python dependencies
-  |-- frontend/                 # Frontend project directory
-      |-- package.json          # Node.js dependencies
-      |-- package-lock.json     # Node.js dependencies lock
-      |-- index.html            # Index HTML
-      |-- main.js               # JavaScript
-      |-- style.css             # Styles for frontend
+http://127.0.0.1:8000
 ```
 
----
+The UI will load automatically — it's served as static files via FastAPI.
 
-## Notes
-- Keep `requirements.txt` and `package.json` updated.
-- For new Python packages, run:
-  ```bash
-  pip freeze > requirements.txt
-  ```
-- For new Node.js packages, run:
-  ```bash
-  npm install <package> --save
-  ```
-- Always commit both `requirements.txt` and `package-lock.json` to version control.
+## 🧪 How to Use
 
-This setup guide ensures a smooth deployment and consistent development experience for your application.
+1. Type a stock ticker (e.g. AAPL) into the search bar
+2. View interactive charts and technical indicators
+3. Run machine learning projections
+4. Add tickers to your watchlist
+5. See real-time news for any stock
+
+## 🗂️ Project Structure
+```bash
+/tradepal
+│
+├── backend/
+│   ├── api.py              # FastAPI backend and endpoints
+│   ├── tools.py            # Technical indicator logic
+│   ├── ml.py               # Machine learning models and logic
+│   └── requirements.txt    # Python dependencies
+│
+├── frontend/
+│   ├── index.html          # Main app UI
+│   ├── style.css           # Custom styling
+│   └── main.js             # JavaScript logic and chart rendering
+```
+
+## 🧠 Developer Notes
+Yahoo Finance is rate-limited — all requests are serialized and retried politely.
+
+The frontend is fully static — no build step or JavaScript framework needed.
+
+ML model predictions support ARIMA, XGBoost, RandomForest, etc.
+
+## 📌 Updating Dependencies
+If you add new Python packages:
+
+```bash
+pip install <package>
+pip freeze > backend/requirements.txt
+Commit requirements.txt after every dependency change.
+```
+
+## 🧾 License
+MIT (or specify your preferred license)
