@@ -1,4 +1,5 @@
 "use strict";
+// main.js
 console.log("main.js loaded");
 
 //
@@ -579,65 +580,75 @@ async function updateMarketInfoUI() {
     `;
     marketIndexesList.appendChild(li);
 
-    // ← grab these *after* injecting the innerHTML
     const row2    = li.querySelector(".item-row2");
     const priceEl = li.querySelector(".item-col-price");
     const dailyEl = li.querySelector(".item-col-daily");
     const ytdEl   = li.querySelector(".item-col-ytd");
 
-    li.addEventListener("click", () => {
-      tickerInput.value = ix.ticker;
-      fetchStock(ix.ticker, "1Y");
-    });
+    let success = false;
+    while (!success) {
+      try {
+        const data = await fetch(`${API_BASE}/watchlist_data/${encodeURIComponent(ix.ticker)}`);
+        if (!data.ok) throw new Error(`HTTP ${data.status}`);
+        const json = await data.json();
 
-    try {
-      const data = await fetchWithRetry(
-        `${API_BASE}/watchlist_data/${encodeURIComponent(ix.ticker)}`,
-        3,    // retries
-        1000  // initial backoff ms
-      );
+        row2.textContent = json.companyName || ix.name;
+        priceEl.textContent = json.currentPrice.toFixed(2);
 
-      row2.textContent = data.companyName || ix.name;
+        const d = json.dailyChange;
+        const p = json.dailyPct;
+        const signD = d >= 0 ? "+" : "";
+        dailyEl.textContent = `${signD}${d.toFixed(2)} (${signD}${p.toFixed(2)}%)`;
+        dailyEl.classList.toggle("up", d > 0);
+        dailyEl.classList.toggle("down", d < 0);
 
-      if (data.currentPrice != null && data.currentPrice !== 0) {
-        priceEl.textContent = data.currentPrice.toFixed(2);
+        const y = json.ytdChange;
+        const yp = json.ytdPct;
+        const signY = y >= 0 ? "+" : "";
+        ytdEl.textContent = `${signY}${y.toFixed(2)} (${signY}${yp.toFixed(2)}%)`;
+        ytdEl.classList.toggle("up", y > 0);
+        ytdEl.classList.toggle("down", y < 0);
 
-        const signD = data.dailyChange >= 0 ? "+" : "";
-        dailyEl.textContent = `${signD}${data.dailyChange.toFixed(2)} (${signD}${data.dailyPct.toFixed(2)}%)`;
-        dailyEl.classList.toggle("up",   data.dailyChange > 0);
-        dailyEl.classList.toggle("down", data.dailyChange < 0);
-
-        const signY = data.ytdChange >= 0 ? "+" : "";
-        ytdEl.textContent = `${signY}${data.ytdChange.toFixed(2)} (${signY}${data.ytdPct.toFixed(2)}%)`;
-        ytdEl.classList.toggle("up",   data.ytdChange > 0);
-        ytdEl.classList.toggle("down", data.ytdChange < 0);
+        success = true;
+      } catch (err) {
+        console.warn(`Retrying market index ${ix.ticker}: ${err}`);
+        await wait(3000); // wait 3s before retrying
       }
-
-    } catch (err) {
-      console.error(`Market fetch failed for ${ix.ticker}:`, err);
-      row2.textContent = "Error fetching data";
     }
-
-    // small delay to avoid rapid‐fire rate limits
-    await sleep(1000);
   }
 }
 
-async function updateWatchlistUI(wl) {
+async function updateWatchlistUI(watchlist) {
   watchlistEl.innerHTML = "";
-  for (const tkr of wl) {
+
+  for (const tkr of watchlist) {
     const li = createWatchlistItem(tkr);
     watchlistEl.appendChild(li);
-    try {
-      const data = await fetchWithRetry(`${API_BASE}/watchlist_data/${encodeURIComponent(tkr)}`);
-      updateWatchlistItem(li, data);
-    } catch (e) {
-      console.error(e);
-      li.querySelector(".item-row2").textContent = "Error fetching data";
+    const row2 = li.querySelector(".item-row2");
+
+    let success = false;
+    while (!success) {
+      try {
+        const resp = await fetch(`${API_BASE}/watchlist_data/${encodeURIComponent(tkr)}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        updateWatchlistItem(li, data);
+        success = true;
+      } catch (e) {
+        console.warn(`Retrying watchlist ticker ${tkr}: ${e.message}`);
+        row2.textContent = "Waiting for response...";
+        await wait(3000);
+      }
     }
-    await sleep(1000); // Increased delay between requests
   }
 }
+
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 
 function addLegendItem(containerId, key, color) {
   const container = document.getElementById(containerId);

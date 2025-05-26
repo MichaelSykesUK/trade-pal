@@ -1,3 +1,5 @@
+# backend/api.py
+
 import json
 import yfinance as yf
 from fastapi import FastAPI, HTTPException
