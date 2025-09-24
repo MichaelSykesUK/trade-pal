@@ -40,8 +40,10 @@ const mlMethodDropdownBtn   = document.getElementById("mlMethodDropdownBtn");
 const mlMethodDropdown      = document.getElementById("mlMethodDropdown");
 const mlFeaturesDropdownBtn = document.getElementById("mlFeaturesDropdownBtn");
 const mlFeaturesDropdown    = document.getElementById("mlFeaturesDropdown");
-// must match HTML id="runMLButton"
 const runMLBtn              = document.getElementById("runMLButton");
+const mlDaysDropdownBtn = document.getElementById("mlDaysDropdownBtn");
+const mlDaysDropdown    = document.getElementById("mlDaysDropdown");
+let selectedMLDays = 20;  // default = 1 week
 
 //
 // === Global State ===
@@ -442,28 +444,55 @@ function populateMLDropdowns() {
     });
   });
 
+  selectedMLMethod = "LinearRegression";
+  const defaultMethodItem = mlMethodDropdown.querySelector('[data-value="LinearRegression"]');
+  if (defaultMethodItem) defaultMethodItem.classList.add("selected");
+
   // ML Features (multi-select)
   ML_FEATURES.forEach(f => {
     const label = document.createElement("label");
     label.textContent = f.label;
+
     const chk = document.createElement("input");
-    chk.type  = "checkbox";
+    chk.type = "checkbox";
     chk.value = f.value;
+    chk.checked = true;  // ✅ check by default
+
+    selectedMLFeatures[f.value] = true;  // ✅ track as checked
+
     const tick = document.createElement("span");
     tick.classList.add("tick");
     tick.textContent = "✓";
+
+    label.classList.add("checked");
     label.prepend(chk);
     label.appendChild(tick);
-    mlFeaturesDropdown.appendChild(label);
 
     chk.addEventListener("change", e => {
       e.stopPropagation();
       label.classList.toggle("checked", chk.checked);
       selectedMLFeatures[f.value] = chk.checked;
     });
+
+    mlFeaturesDropdown.appendChild(label);
+
+    // ML Days: highlight default and setup click behavior
+    mlDaysDropdown.querySelectorAll(".dropdown-item").forEach(item => {
+      const days = parseInt(item.dataset.days);
+      if (days === 20) item.classList.add("selected");  // ✅ Preselect 4 weeks
+
+      item.addEventListener("click", e => {
+        e.stopPropagation();
+        // Deselect all items
+        mlDaysDropdown.querySelectorAll(".dropdown-item").forEach(i => i.classList.remove("selected"));
+        // Mark this one
+        item.classList.add("selected");
+        selectedMLDays = days;
+        // Note: we DO NOT change the button label (ML Days)
+      });
+    });
   });
 }
-
 
 function fetchMLData(ticker, model, features) {
   if (!model) {
@@ -480,7 +509,8 @@ function fetchMLData(ticker, model, features) {
             + `?period=${timeframe}`
             + `&interval=1d`
             + `&model=${encodeURIComponent(model)}`
-            + `&features=${featsJson}`;
+            + `&features=${featsJson}`
+            + `&pre_days=${selectedMLDays}`;
 
   fetch(url)
     .then(async r => {
@@ -519,10 +549,17 @@ function applyMLOverlay(key, projected) {
   const lastRealTs = Math.floor(new Date(lastRealDateStr).getTime() / 1000);
 
   // 3) Build & filter the projection to only days AFTER lastRealTs
-  const projPoints = projected.Date.map((d, i) => ({
-    time:  Math.floor(new Date(d).getTime() / 1000),
-    value: projected.Predicted[i],
-  })).filter(pt => pt.time > lastRealTs);
+  const projPoints = [];
+  for (let i = 0; i < projected.Date.length; i++) {
+    const d = new Date(projected.Date[i]);
+    const day = d.getUTCDay(); // 0 = Sun, 6 = Sat
+    if (day === 0 || day === 6) continue; // Skip weekends
+
+    const time = Math.floor(d.getTime() / 1000);
+    if (time <= lastRealTs) continue;
+
+    projPoints.push({ time, value: projected.Predicted[i] });
+  }
 
   if (!projPoints.length) {
     return alert("No projected points beyond the last real date.");
@@ -1054,10 +1091,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Run ML button
   runMLBtn.addEventListener("click", () => {
-    const t = tickerInput.value.trim();
-    if (!t)                return alert("Enter a ticker first");
+    const t = currentLoadedTicker?.trim();
+    if (!t) return alert("No ticker loaded in view.");
     if (!selectedMLMethod) return alert("Select an ML Method");
-    fetchMLData(t, selectedMLMethod, selectedMLFeatures);
+    fetchMLData(t, selectedMLMethod, selectedMLFeatures, selectedMLDays);
   });
 
   // Search
