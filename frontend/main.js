@@ -324,7 +324,8 @@ function toggleIndicator(val, isChecked) {
 }
 
 function fetchIndicatorData(ticker, val) {
-  const timeframe = document.querySelector("#timeframeButtons .active")?.dataset.period || "1Y";
+  const timeframe = document.querySelector("#timeframeButtons .active")?.dataset.period.toLowerCase() || "1y";
+  
   const url = `${API_BASE}/indicators/${ticker}?period=${timeframe}&interval=1d`;
   return fetch(url)
     .then(r => { if (!r.ok) throw new Error("Indicator fetch error: " + r.statusText); return r.json(); })
@@ -761,7 +762,7 @@ function updateTopInfo(ticker, data, kpi) {
   changeEl.classList.toggle("up", change > 0);
   changeEl.classList.toggle("down", change < 0);
 
-  const timeframe = document.querySelector("#timeframeButtons .active")?.dataset.period || "1Y";
+  const timeframe = document.querySelector("#timeframeButtons .active")?.dataset.period.toLowerCase() || "1y";
   const latestDate= new Date(data.Date[lastIndex]);
   const today     = new Date();
   const isToday   = latestDate.toDateString() === today.toDateString();
@@ -829,7 +830,7 @@ function displayNews(news) {
 
     li.appendChild(txt);
     const img = document.createElement("img");
-    img.src = item.thumbnail?.resolutions?.[0]?.url || "yahoo-news.jpg";
+    img.src = item.thumbnail?.resolutions?.[0]?.url || "static/icons/yahoo-news.jpg";
     img.classList.add("news-thumbnail");
     li.appendChild(img);
 
@@ -903,7 +904,9 @@ function createWatchlistItem(tkr) {
   li.addEventListener("click", e => {
     if (e.target === rem) return;
     tickerInput.value = tkr;
-    fetchStock(tkr, "1Y");
+    fetchStock(tkr, "1y");
+
+
   });
   return li;
 }
@@ -1026,7 +1029,7 @@ function populateDropdowns() {
       ctd.querySelectorAll(".dropdown-item").forEach(i => i.classList.remove("selected"));
       item.classList.add("selected");
       const t = tickerInput.value.trim();
-      const tf = document.querySelector("#timeframeButtons .active")?.dataset.period || "1Y";
+      const tf = document.querySelector("#timeframeButtons .active")?.dataset.period.toLowerCase() || "1y";
       if (t) fetchStock(t, tf);
     });
   });
@@ -1100,7 +1103,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Search
   searchButton.addEventListener("click", () => {
     const t = tickerInput.value.trim();
-    if (t) fetchStock(t, "1Y");
+    if (t) fetchStock(t, "1y");
   });
 
   // Timeframe buttons

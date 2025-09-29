@@ -526,3 +526,199 @@ body {
   font-size: 24px;
   z-index: 10000;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* --- LAYOUT: fill the viewport, charts stretch to bottom --- */
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#topRibbon {
+  flex: 0 0 auto;
+}
+
+#mainContainer {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0; /* allow children to shrink */
+  overflow: hidden;
+}
+
+/* Side panes keep as-is but allow internal scroll */
+#left-pane, #right-pane {
+  overflow-y: auto;
+}
+
+/* Center pane becomes a vertical flex column */
+#center-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;   /* keep internal scrolls contained */
+}
+
+/* Top stock info + controls are natural height */
+#stockInfo { flex: 0 0 auto; }
+#controlsRow { flex: 0 0 auto; }
+
+/* Charts section eats remaining space and pushes to bottom */
+#chartsSection {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0; /* critical so children can flex */
+}
+
+/* Main chart grows; others fixed */
+#mainChartContainer {
+  flex: 1 1 auto;         /* grows to fill available height */
+  min-height: 360px;      /* a bit taller by default */
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+}
+#mainChart { flex: 1 1 auto; }
+
+/* Keep volume & indicator at fixed heights */
+#volumeChartContainer { flex: 0 0 130px; height: 130px; }
+#indicatorChartContainer { flex: 0 0 160px; height: 160px; }
+
+/* KPI table sits under charts; allow scrolling if needed */
+#kpiTableContainer {
+  flex: 0 0 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: 30vh; /* so on small screens details remain visible; adjust as you like */
+}
+
+/* --- DROPDOWNS: width, ticks inline, no unnecessary scrolling --- */
+#chartOptions {
+  display: flex;
+  flex-wrap: wrap;   /* allow wrapping on small widths */
+  gap: 8px;
+}
+
+.dropdown { position: relative; }
+
+/* size to content and keep ticks on the same line */
+.dropdown-content {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  z-index: 9999;
+  padding: 4px 0;
+  display: none;
+
+  /* key changes */
+  width: max-content;   /* expand to fit the widest item */
+  min-width: 140px;
+  max-width: none;
+
+  /* remove default cap so ML Features can show all items */
+  max-height: none;     /* was 250px */
+  overflow: visible;    /* no scroll bar */
+  white-space: nowrap;  /* keep tick on same line */
+}
+
+.dropdown.open .dropdown-content { display: block; }
+
+.dropdown-item,
+.dropdown-content label {
+  display: flex;                     /* put text and tick on one line */
+  align-items: center;
+  justify-content: space-between;    /* pushes tick to right end */
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dropdown-item .tick,
+.dropdown-content .tick {
+  margin-left: 8px;
+  color: #007aff;
+  font-weight: 600;
+  display: none;           /* hidden until selected/checked */
+}
+
+/* Show tick when selected (single-select dropdowns) */
+.dropdown-item.selected .tick { display: inline; }
+
+/* Show tick when checkbox labels are checked (multi-select) */
+.dropdown-content label.checked .tick { display: inline; }
+
+/* Slightly larger hit-area for select buttons */
+.nice-select {
+  padding: 4px 10px;
+  height: 28px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+}
+
+/* --- SMALL NICE-TO-HAVES --- */
+#timeframeButtons { display: flex; flex-wrap: wrap; gap: 4px; }
+.timeframe-btn { margin-right: 0; } /* gap handles spacing */
+
+
+
+
+
+#loadingOverlay { display: none; pointer-events: none; }
+#loadingOverlay[style*="display: flex"] { pointer-events: auto; }
+
+
+
+
+
+/* --- prevent charts & axes from overlapping --- */
+#chartsSection {
+  gap: 12px;                 /* extra breathing room between chart blocks */
+}
+
+/* Reserve bottom space inside each chart container for the X-axis labels */
+#mainChartContainer,
+#volumeChartContainer,
+#indicatorChartContainer {
+  position: relative;
+  box-sizing: border-box;
+}
+
+#mainChartContainer { padding-bottom: 18px; }     /* more room for main x-axis */
+#volumeChartContainer { padding-bottom: 14px; }   /* keep volume labels clear */
+#indicatorChartContainer { padding-bottom: 14px; }
+
+#mainChart,
+#volumeChart,
+#indicatorChart {
+  height: 100%;
+  width: 100%;
+  /* make the chart fit above the padding space */
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+}
+
+/* extra margin before the KPI table so it never touches the chart above */
+#kpiTableContainer {
+  margin-top: 16px;          /* was 10px */
+}

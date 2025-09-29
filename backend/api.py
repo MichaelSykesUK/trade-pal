@@ -1,23 +1,27 @@
 # backend/api.py
 
 import json
+import time
+import traceback
+from pathlib import Path
+
+import requests
 import yfinance as yf
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-import traceback
-import requests
-import time
 from yfinance.exceptions import YFRateLimitError
+
 from backend.tools import (
     get_stock_data,
     get_kpi_data,
     get_technical_indicators,
     slice_indicator_data,
-    get_extended_period
+    get_extended_period,
 )
 from backend.ml import get_available_models, run_ml_model
+
 
 app = FastAPI()
 
@@ -39,10 +43,9 @@ def yahoo_autocomplete(q: str):
     try:
         resp = requests.get(
             "https://query2.finance.yahoo.com/v1/finance/search",
-            params={"q": q, "lang": "en-US", "region": "US",
-                    "quotesCount": 6, "newsCount": 0},
+            params={"q": q, "lang": "en-US", "region": "US", "quotesCount": 6, "newsCount": 0},
             headers={"User-Agent": "Mozilla/5.0"},
-            timeout=5
+            timeout=5,
         )
         resp.raise_for_status()
         return resp.json()
@@ -56,10 +59,9 @@ def get_news(ticker: str):
     try:
         resp = requests.get(
             "https://query2.finance.yahoo.com/v1/finance/search",
-            params={"q": ticker, "lang": "en-US", "region": "US",
-                    "quotesCount": 0, "newsCount": 10},
+            params={"q": ticker, "lang": "en-US", "region": "US", "quotesCount": 0, "newsCount": 10},
             headers={"User-Agent": "Mozilla/5.0"},
-            timeout=5
+            timeout=5,
         )
         resp.raise_for_status()
         return resp.json().get("news", [])
@@ -74,6 +76,10 @@ def stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
     Fetches historical stock data and preloads max-range indicators,
     retrying up to 3 times on YF rate‐limit errors.
     """
+    # Normalize inputs so "1Y" / "1D" work
+    period = (period or "").lower().strip()
+    interval = (interval or "").lower().strip()
+
     max_retries = 3
     backoff = 0.5
 
@@ -83,8 +89,7 @@ def stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
             data = get_stock_data(ticker, period, interval)
 
             # 2) fetch & cache the full-range technical indicators
-            max_ind = get_technical_indicators(
-                ticker, period="max", interval=interval)
+            max_ind = get_technical_indicators(ticker, period="max", interval=interval)
             INDICATOR_DATA_STORE[ticker] = max_ind
 
             return data
@@ -98,7 +103,7 @@ def stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
             # final failure: service unavailable
             raise HTTPException(
                 status_code=503,
-                detail="Yahoo Finance rate limit exceeded. Please try again later."
+                detail="Yahoo Finance rate limit exceeded. Please try again later.",
             )
 
         except ValueError as e:
@@ -107,8 +112,8 @@ def stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
 
         except Exception as e:
             # unexpected → server error
-            raise HTTPException(
-                status_code=500, detail=f"Internal Server Error: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
 
 
 @app.get("/kpi/{ticker}")
@@ -131,25 +136,41 @@ def kpi_data_endpoint(ticker: str):
                 continue
             # on final failure, return a safe default KPI object:
             return {
-                "companyName": "N/A", "exchange": "", "currency": "",
-                "peRatio": "N/A", "forwardPE": "N/A", "nextEarningsDate": "N/A",
-                "weekHigh52": None, "weekLow52": None, "marketCap": "N/A",
-                "beta": "N/A", "eps": "N/A", "dividend": "N/A",
-                "exDividendDate": "N/A", "openPrice": None, "previousClose": None,
-                "daysRange": "N/A", "weekRange": "N/A", "avgVolume": None
+                "companyName": "N/A",
+                "exchange": "",
+                "currency": "",
+                "peRatio": "N/A",
+                "forwardPE": "N/A",
+                "nextEarningsDate": "N/A",
+                "weekHigh52": None,
+                "weekLow52": None,
+                "marketCap": "N/A",
+                "beta": "N/A",
+                "eps": "N/A",
+                "dividend": "N/A",
+                "exDividendDate": "N/A",
+                "openPrice": None,
+                "previousClose": None,
+                "daysRange": "N/A",
+                "weekRange": "N/A",
+                "avgVolume": None,
             }
 
         except Exception as e:
+            traceback.print_exc()
             raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/indicators/{ticker}")
 def indicators(ticker: str, period: str = "1y", interval: str = "1d"):
+    # Normalize inputs
+    period = (period or "").lower().strip()
+    interval = (interval or "").lower().strip()
+
     global INDICATOR_DATA_STORE
     try:
         if ticker not in INDICATOR_DATA_STORE:
-            INDICATOR_DATA_STORE[ticker] = get_technical_indicators(
-                ticker, period="max", interval=interval)
+            INDICATOR_DATA_STORE[ticker] = get_technical_indicators(ticker, period="max", interval=interval)
         return slice_indicator_data(INDICATOR_DATA_STORE[ticker], period)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -182,8 +203,7 @@ def watchlist_data(ticker: str):
             current_price = float(latest["Close"])
             prev_close = float(prev["Close"])
             daily_change = current_price - prev_close
-            daily_pct = (daily_change / prev_close *
-                         100) if prev_close else 0.0
+            daily_pct = (daily_change / prev_close * 100) if prev_close else 0.0
 
             ytd_price = float(hist.iloc[0]["Close"])
             ytd_change = current_price - ytd_price
@@ -191,7 +211,7 @@ def watchlist_data(ticker: str):
 
             # 2) Get company info (also with its own mini‐retry)
             info = {}
-            for i in range(max_retries):
+            for _ in range(max_retries):
                 try:
                     info = yf_data.info or {}
                     break
@@ -224,14 +244,17 @@ def watchlist_data(ticker: str):
             break
 
     # fallback response if we never returned above
-    return JSONResponse(status_code=200, content={
-        "companyName": "Unknown",
-        "currentPrice": 0.0,
-        "dailyChange": 0.0,
-        "dailyPct": 0.0,
-        "ytdChange": 0.0,
-        "ytdPct": 0.0,
-    })
+    return JSONResponse(
+        status_code=200,
+        content={
+            "companyName": "Unknown",
+            "currentPrice": 0.0,
+            "dailyChange": 0.0,
+            "dailyPct": 0.0,
+            "ytdChange": 0.0,
+            "ytdPct": 0.0,
+        },
+    )
 
 
 @app.get("/ml/models")
@@ -252,9 +275,11 @@ def ml_predictions(
     ema1: int = 50,
     arima_order: str = "5,1,0",
     scaler_type: str = "standard",
-    features: str = None,
+    features: str | None = None,
 ):
-    # Normalize period for yfinance
+    # Normalize inputs for yfinance
+    period = (period or "").lower().strip()
+    interval = (interval or "").lower().strip()
     yf_period = get_extended_period(period)
 
     # Parse ARIMA order
@@ -264,10 +289,9 @@ def ml_predictions(
         raise HTTPException(400, "Invalid arima_order; must be 'p,d,q'.")
 
     # Quick check for historical data
-    tmp = yf.download(ticker, period=yf_period, interval=interval)
+    tmp = yf.download(ticker, period=yf_period, interval=interval, progress=False)
     if tmp.empty:
-        raise HTTPException(
-            400, f"No historical data found for '{ticker}' over period '{period}'")
+        raise HTTPException(400, f"No historical data found for '{ticker}' over period '{period}'")
 
     # Parse and validate feature flags
     if not features:
@@ -311,5 +335,17 @@ def ml_predictions(
             raise HTTPException(500, f"ML Error: {e}")
 
 
-# Mount static files last
-app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
+# ---------- Static files ----------
+# Serve the frontend reliably using an absolute path.
+STATIC_DIR = (Path(__file__).resolve().parent.parent / "frontend").resolve()
+
+# If you prefer the root to serve index.html directly:
+@app.get("/")
+def read_index():
+    index_path = STATIC_DIR / "index.html"
+    if not index_path.exists():
+        raise HTTPException(404, "frontend/index.html not found")
+    return FileResponse(index_path)
+
+# Serve assets under /static (JS, CSS, images, etc.)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
