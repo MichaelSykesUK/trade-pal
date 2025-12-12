@@ -12,38 +12,49 @@ TradePal is a full-stack financial analytics app that provides interactive stock
 
 ## 📦 Requirements
 
-- **Python 3.8+**
-- **Virtual environment** (recommended)
+- **Python 3.10+**
+- **Node.js 18+**
+- **Virtual environment** (Conda or `venv`) for the backend
 
 ## ⚙️ Setup Instructions
 
-### 1. Clone the Repository and Create a Virtual Environment
+### Backend
 ```bash
-git clone https://github.com/your-org/tradepal.git
-cd tradepal
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
+conda env create -f backend/environment.yml
+conda activate tradepal
+# or: python -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt
 ```
 
-### 2. Install Backend Dependencies
+### Frontend
 ```bash
-pip install -r backend/requirements.txt
+cd frontend
+npm install
+```
+If your backend does **not** run on `http://localhost:8000`, add a `.env.local`
+file under `frontend/` with:
+```
+NEXT_PUBLIC_API_BASE=https://your-api-host
 ```
 
 ## ▶️ Run the Application
 
-```bash
-uvicorn backend.api:app --reload
-```
-
-By default, the application will be available at:
+Run the backend (FastAPI) and frontend (Next.js) in two terminals:
 
 ```bash
-http://127.0.0.1:8000
+# Terminal 1
+conda activate tradepal  # or source your venv
+uvicorn backend.api:app --reload --port 8000
+
+# Terminal 2
+cd frontend
+npm run dev
 ```
 
-The UI will load automatically — it's served as static files via FastAPI.
+- Backend API: `http://127.0.0.1:8000`
+- Frontend UI: `http://127.0.0.1:3000`
+
+The frontend talks to the backend through REST calls; keep both processes running while you work.
 
 ## 🧪 How to Use
 
@@ -64,17 +75,16 @@ The UI will load automatically — it's served as static files via FastAPI.
 │   └── requirements.txt    # Python dependencies
 │
 ├── frontend/
-│   ├── index.html          # Main app UI
-│   ├── style.css           # Custom styling
-│   └── main.js             # JavaScript logic and chart rendering
+│   ├── pages/              # Next.js routes (legacy DOM rendered in React)
+│   ├── public/static/      # Legacy JS bundle and assets
+│   └── styles/             # Global CSS imported by `_app.jsx`
 ```
 
 ## 🧠 Developer Notes
-Yahoo Finance is rate-limited — all requests are serialized and retried politely.
-
-The frontend is fully static — no build step or JavaScript framework needed.
-
-ML model predictions support ARIMA, XGBoost, RandomForest, etc.
+- Yahoo Finance is rate-limited — requests are retried with exponential backoff.
+- The frontend fetches market/watchlist data via a single `/watchlist_data/batch` call and debounces autocomplete requests to stay under rate limits.
+- The legacy UI still runs inside Next.js so you can incrementally port DOM logic into React components.
+- ML model predictions support ARIMA, XGBoost, RandomForest, etc.
 
 ## 📌 Updating Dependencies
 If you add new Python packages:

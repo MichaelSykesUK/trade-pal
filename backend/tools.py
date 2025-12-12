@@ -1,8 +1,11 @@
 # backend/tools.py
 
+import time
 import pandas as pd
 import numpy as np
 import yfinance as yf
+from yfinance import shared as yf_shared
+from yfinance.exceptions import YFRateLimitError
 from datetime import datetime, timedelta
 
 
@@ -113,9 +116,14 @@ def process_data(data, ticker):
 
 def get_stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
     extended_period = get_extended_period(period)
-    data = yf.download(ticker, period=extended_period,
-                       interval=interval, auto_adjust=False)
+    data = yf.download(
+        ticker, period=extended_period, interval=interval, auto_adjust=False
+    )
+    if _rate_limit_detected():
+        raise YFRateLimitError("Yahoo Finance rate limit exceeded.")
     if data.empty:
+        if _rate_limit_detected():
+            raise YFRateLimitError("Yahoo Finance rate limit exceeded.")
         raise ValueError(f"No data found for {ticker} in period {period}.")
     data = process_data(data, ticker)
     data.reset_index(inplace=True)
@@ -257,9 +265,14 @@ def compute_obv(close, volume):
 
 
 def get_technical_indicators(ticker: str, period: str = "1y", interval: str = "1d"):
-    data = yf.download(ticker, period=period,
-                       interval=interval, auto_adjust=False)
+    data = yf.download(
+        ticker, period=period, interval=interval, auto_adjust=False
+    )
+    if _rate_limit_detected():
+        raise YFRateLimitError("Yahoo Finance rate limit exceeded.")
     if data.empty:
+        if _rate_limit_detected():
+            raise YFRateLimitError("Yahoo Finance rate limit exceeded.")
         raise ValueError(f"No data found for {ticker} in period {period}.")
     data = process_data(data, ticker)
     data.dropna(subset=["Close"], inplace=True)
@@ -306,3 +319,172 @@ def slice_indicator_data(indicator_data: dict, user_period: str) -> dict:
     d = df.to_dict(orient="list")
     d = convert_numpy_types(d)
     return d
+
+
+def _safe_price(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _default_watchlist_payload():
+    return {
+        "companyName": "Unknown",
+        "currentPrice": 0.0,
+        "dailyChange": 0.0,
+        "dailyPct": 0.0,
+        "ytdChange": 0.0,
+        "ytdPct": 0.0,
+    }
+
+
+def _compute_watchlist_payload(df: pd.DataFrame) -> dict:
+    if df is None or df.empty or "Close" not in df.columns:
+        return _default_watchlist_payload()
+
+    df = df.dropna(subset=["Close"])
+    if df.empty:
+        return _default_watchlist_payload()
+
+    latest = df.iloc[-1]
+    prev = df.iloc[-2] if len(df) > 1 else latest
+    ytd_row = df.iloc[0]
+
+    current_price = _safe_price(latest.get("Close"))
+    prev_close = _safe_price(prev.get("Close")) or current_price
+    ytd_price = _safe_price(ytd_row.get("Close")) or current_price
+
+    if current_price is None:
+        return _default_watchlist_payload()
+
+    daily_change = current_price - (prev_close or 0.0)
+    daily_pct = (daily_change / prev_close * 100.0) if prev_close else 0.0
+    ytd_change = current_price - (ytd_price or 0.0)
+    ytd_pct = (ytd_change / ytd_price * 100.0) if ytd_price else 0.0
+
+    return {
+        "companyName": "Unknown",
+        "currentPrice": current_price,
+        "dailyChange": daily_change,
+        "dailyPct": daily_pct,
+        "ytdChange": ytd_change,
+        "ytdPct": ytd_pct,
+    }
+
+
+WATCHLIST_CACHE_TTL = 60  # seconds
+WATCHLIST_CACHE: dict[str, tuple[float, dict]] = {}
+WATCHLIST_CHUNK = 3
+
+
+def get_watchlist_batch(tickers: list[str]) -> dict:
+    """
+    Fetch watchlist metrics while batching downloads, caching recent responses,
+    and degrading gracefully on rate limits.
+    """
+    clean = [t.strip().upper() for t in tickers if t and t.strip()]
+    if not clean:
+        return {}
+
+    now = time.time()
+    results: dict[str, dict] = {}
+    missing: list[str] = []
+
+    for t in clean:
+        cached = WATCHLIST_CACHE.get(t)
+        if cached and now - cached[0] < WATCHLIST_CACHE_TTL:
+            results[t] = cached[1]
+        else:
+            missing.append(t)
+
+    for i in range(0, len(missing), WATCHLIST_CHUNK):
+        chunk = missing[i : i + WATCHLIST_CHUNK]
+        if not chunk:
+            continue
+        try:
+            chunk_payload = _download_watchlist_chunk(chunk)
+        except YFRateLimitError:
+            chunk_payload = {}
+            for ticker in chunk:
+                try:
+                    chunk_payload.update(_download_watchlist_chunk([ticker]))
+                except YFRateLimitError:
+                    chunk_payload[ticker] = _default_watchlist_payload()
+        for ticker, payload in chunk_payload.items():
+            results[ticker] = payload
+            WATCHLIST_CACHE[ticker] = (time.time(), payload)
+
+    for t in clean:
+        results.setdefault(t, _default_watchlist_payload())
+
+    return results
+
+
+def _download_watchlist_chunk(tickers: list[str]) -> dict[str, dict]:
+    if not tickers:
+        return {}
+    try:
+        hist = yf.download(
+            tickers,
+            period="7d",
+            interval="1d",
+            auto_adjust=False,
+            group_by="ticker",
+            threads=False,
+        )
+    except YFRateLimitError:
+        raise
+
+    if isinstance(hist, pd.Series):
+        hist = hist.to_frame().T
+
+    if _rate_limit_detected():
+        raise YFRateLimitError("Yahoo Finance rate limit exceeded.")
+
+    info_lookup = {}
+    try:
+        tickers_obj = yf.Tickers(" ".join(tickers))
+        for t in tickers:
+            info_lookup[t] = getattr(tickers_obj.tickers.get(t), "info", {}) or {}
+    except Exception:
+        for t in tickers:
+            info_lookup[t] = {}
+
+    chunk_results = {}
+    for ticker in tickers:
+        try:
+            subset = process_data(hist.copy(), ticker)
+        except Exception:
+            subset = pd.DataFrame()
+        payload = _compute_watchlist_payload(subset)
+        info = info_lookup.get(ticker, {})
+        name = info.get("shortName") or info.get("longName")
+        if name:
+            payload["companyName"] = name
+        chunk_results[ticker] = payload
+    return chunk_results
+
+
+def _rate_limit_detected() -> bool:
+    """
+    Inspect yfinance's shared error log to see if the last download was
+    rate-limited. yfinance swallows some YFRateLimitError exceptions and only
+    records them in shared._ERRORS, so we surface that here.
+    """
+    errors = getattr(yf_shared, "_ERRORS", None)
+    if not errors:
+        return False
+    for err in list(errors):
+        if isinstance(err, dict):
+            msg = err.get("error") or err.get("message") or ""
+        else:
+            msg = str(err)
+        msg = (msg or "").lower()
+        if "rate limit" in msg or "too many requests" in msg:
+            try:
+                errors.clear()
+            except Exception:
+                pass
+            return True
+    return False

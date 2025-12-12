@@ -69,12 +69,30 @@ class StockPredictionModel:
         try:
             data = yf.download(
                 self.ticker, period=self.period, interval=self.interval)
+            if data.empty:
+                raise ValueError("No price history returned")
 
-            # Extract relevant multiindex columns for the specific ticker
-            prices = data[("Close", self.ticker)]
-            high_prices = data[("High", self.ticker)]
-            low_prices = data[("Low", self.ticker)]
-            volumes = data[("Volume", self.ticker)]
+            # yfinance returns single-level columns for one ticker and a
+            # MultiIndex when multiple tickers are requested. Support both
+            # layouts so the ML endpoints work again.
+            if isinstance(data.columns, pd.MultiIndex):
+                try:
+                    subset = data.xs(self.ticker, level=-1, axis=1)
+                except KeyError as exc:
+                    raise ValueError(
+                        f"{self.ticker} not present in downloaded data") from exc
+            else:
+                subset = data
+
+            required = ("Close", "High", "Low", "Volume")
+            missing = [col for col in required if col not in subset.columns]
+            if missing:
+                raise ValueError(f"Missing columns: {', '.join(missing)}")
+
+            prices = subset["Close"]
+            high_prices = subset["High"]
+            low_prices = subset["Low"]
+            volumes = subset["Volume"]
             return prices, high_prices, low_prices, volumes
 
         except Exception as e:

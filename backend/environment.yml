@@ -1,0 +1,12 @@
+name: tradepal
+channels:
+  - conda-forge
+dependencies:
+  - python
+  - fastapi
+  - requests
+  - uvicorn
+  - pandas
+  - yfinance
+  - scikit-learn
+  - xgboost

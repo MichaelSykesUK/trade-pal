@@ -8,6 +8,7 @@ from pathlib import Path
 import requests
 import yfinance as yf
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +20,7 @@ from backend.tools import (
     get_technical_indicators,
     slice_indicator_data,
     get_extended_period,
+    get_watchlist_batch,
 )
 from backend.ml import get_available_models, run_ml_model
 
@@ -36,6 +38,10 @@ app.add_middleware(
 
 # Global store for indicator data
 INDICATOR_DATA_STORE = {}
+
+
+class WatchlistBatchRequest(BaseModel):
+    tickers: list[str]
 
 
 @app.get("/autocomplete")
@@ -255,6 +261,23 @@ def watchlist_data(ticker: str):
             "ytdPct": 0.0,
         },
     )
+
+
+@app.post("/watchlist_data/batch")
+def watchlist_data_batch(payload: WatchlistBatchRequest):
+    tickers = payload.tickers or []
+    if not tickers:
+        raise HTTPException(status_code=400, detail="Provide at least one ticker.")
+    try:
+        return get_watchlist_batch(tickers)
+    except YFRateLimitError:
+        raise HTTPException(
+            status_code=503,
+            detail="Yahoo Finance rate limit exceeded. Please try again later.",
+        )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/ml/models")

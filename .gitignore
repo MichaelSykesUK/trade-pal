@@ -138,6 +138,7 @@ dmypy.json
 cython_debug/
 
 **node_modules/
+.next/
 **old
 **influxdb_credentials.txt
 **temp
