@@ -1,8 +1,9 @@
 TradePal frontend (Next.js)
 ===========================
 
-The legacy DOM/UI is now rendered through a minimal Next.js 14 app so you can
-gradually convert features to React components.
+The frontend is a full React/Next.js 14 experience: header, sidebar, chart,
+market data, KPIs, and the ML controls are implemented as components while the
+backend continues to expose FastAPI endpoints.
 
 ## Getting started
 
@@ -27,10 +28,10 @@ NEXT_PUBLIC_API_BASE=https://your-backend-host
 `_app.jsx` injects that value into `window.TRADEPAL_API_BASE`, which the legacy
 `public/static/main.js` script reads before making requests.
 
-## Legacy assets
+## Architecture
 
-- `pages/index.jsx` renders the original DOM structure so the script can keep running.
-- `public/static/main.js` holds the legacy JavaScript bundle (loaded via `<Script>`).
-- `public/static/style.css` contains the legacy CSS (served directly by Next).
-
-Refactor those pieces into modern React components whenever you're ready.
+- `pages/index.jsx` wires together the header, watchlist sidebar, chart panel,
+  KPI table, ML controls, and news feed.
+- `styles/globals.css` contains all styling (legacy CSS has been removed).
+- Lightweight Charts is loaded globally in `_app.jsx` and used inside the
+  `ChartPanel` component.

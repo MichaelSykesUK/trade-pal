@@ -1,8 +1,33 @@
-/* style.css */
-
 :root {
   --main-font: "Inter", sans-serif;
   --main-font-size: 12px;
+}
+
+[data-theme='dark'] body {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+[data-theme='dark'] #topRibbon,
+[data-theme='dark'] .watchlist-box,
+[data-theme='dark'] .market-box,
+[data-theme='dark'] #center-pane,
+[data-theme='dark'] .news-box {
+  background-color: #182338;
+  border-color: #2c3a55;
+  box-shadow: none;
+}
+
+[data-theme='dark'] .timeframe-btn,
+[data-theme='dark'] .primary-btn,
+[data-theme='dark'] .secondary-btn,
+[data-theme='dark'] .semi-round-btn {
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+[data-theme='dark'] .item-container:hover {
+  background-color: #1f2b43;
 }
 
 body {
@@ -11,9 +36,7 @@ body {
   font-size: var(--main-font-size);
   background-color: #fff;
   color: #333;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
+  min-height: 100vh;
 }
 
 /* Top Ribbon */
@@ -39,6 +62,10 @@ body {
   gap: 8px;
 }
 
+.dark-mode-toggle {
+  min-width: 100px;
+}
+
 #topSearchContainer {
   position: relative;
   width: 100%;
@@ -60,11 +87,16 @@ body {
 #tickerSearch:focus {
   border-color: #007aff;
 }
+[data-theme='dark'] #tickerSearch {
+  background: #1f2b43;
+  border-color: #2c3a55;
+  color: #e2e8f0;
+}
 
 .search-clear-btn {
   display: none; /* hide by default */
   position: absolute;
-  right: 90px;
+  right: 12px;
   top: 50%;
   transform: translateY(-50%);
   font-size: 14px;
@@ -84,21 +116,6 @@ body {
 }
 
 /* The Search button is separate, with a left margin so there's space from the input. */
-#searchButton {
-  margin-left: 8px;
-  background-color: #fff;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  font-size: 14px;
-  height: 36px;
-  padding: 6px 12px;
-  cursor: pointer;
-}
-
-#searchButton:hover {
-  background-color: #eee;
-}
-
 .autocomplete-suggestions {
   position: absolute;
   top: 32px;
@@ -111,6 +128,17 @@ body {
   z-index: 9999;
   display: none;
 }
+[data-theme='dark'] .autocomplete-suggestions {
+  background: #1f2b43;
+  border-color: #2c3a55;
+  color: #e2e8f0;
+}
+
+.suggestion-loading {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #666;
+}
 .suggestion-item {
   padding: 4px 8px;
   cursor: pointer;
@@ -118,23 +146,368 @@ body {
 .suggestion-item:hover {
   background-color: #eee;
 }
+[data-theme='dark'] .suggestion-item:hover {
+  background-color: #24304a;
+}
 
 /* Main Container */
 #mainContainer {
   flex: 1;
+  display: grid;
+  /* left column auto-fits content within a sensible min/max, center column
+     takes remaining space, right column (news) has a fixed sensible width */
+  grid-template-columns: minmax(200px, 320px) minmax(0, 1fr) 320px;
+  gap: 18px;
+  padding: 20px 28px 32px;
+  box-sizing: border-box;
+  align-items: start;
+  width: 100%;
+}
+
+#left-pane {
+  grid-column: 1;
+  background: #fff;
+  padding: 14px;
+  box-sizing: border-box;
   display: flex;
-  overflow: hidden;
+  flex-direction: column;
+  gap: 16px;
+  align-self: start;
+  /* let the left pane grow naturally, avoid its own scrollbar */
+  max-height: none;
+  overflow: visible;
+}
+
+#mainContainer main {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.news-column {
+  grid-column: 3;
+  align-self: start;
+  /* keep a predictable width for the news column */
+  min-width: 320px;
+  max-width: 320px;
+}
+
+.news-column .news-panel {
+  position: sticky;
+  top: 90px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .news-column .news-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 1200px) {
+  #mainContainer {
+    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-areas:
+      "sidebar main"
+      "sidebar news";
+  }
+  #left-pane {
+    grid-column: 1;
+  }
+  .news-column {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 900px) {
+  #mainContainer {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "sidebar"
+      "main"
+      "news";
+  }
+  #left-pane,
+  #mainContainer main,
+  .news-column {
+    grid-column: 1;
+  }
+  .news-column .news-panel {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+[data-theme='dark'] #left-pane {
+  background: #1f2b43;
+  border: 1px solid #2c3a55;
+}
+
+[data-theme='dark'] .news-column .news-panel {
+  background: #1f2b43;
+  border-color: #2c3a55;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.main-content .panel-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.main-content .panel-row.two-col {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.5fr) minmax(360px, 1.2fr);
+  gap: 16px;
+}
+
+.panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.main-content .panel-row .panel {
+  flex: 1;
+  min-width: 260px;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.05);
+}
+.chart-panel {
+  min-height: 520px;
+}
+
+[data-theme='dark'] .panel {
+  background: #1f2b43;
+  border-color: #2c3a55;
+  color: #e2e8f0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.timeframe-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.panel-subtitle {
+  color: #6b7280;
+  margin: 0;
+  font-size: 12px;
+}
+[data-theme='dark'] .panel-subtitle {
+  color: #cbd5e1;
+}
+
+.chart-container {
+  width: 100%;
+  min-height: 420px;
+  /* ensure the chart container matches panel background and doesn't show its own scrollbar */
+  background: transparent;
+}
+
+/* Force lightweight-charts canvases to inherit container background and
+   ensure dark-mode background is visible (library may add a canvas with
+   default white background). */
+.chart-container canvas,
+.indicator-chart canvas {
+  background-color: transparent !important;
+}
+
+[data-theme='dark'] .chart-container,
+[data-theme='dark'] .indicator-chart {
+  background-color: #0f172a; /* match chart theme background */
+}
+
+.indicator-chart {
+  width: 100%;
+  min-height: 160px;
+  margin-top: 8px;
+}
+
+.overlay-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.control-label {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.panel-error {
+  background: #fff3f3;
+  color: #b42318;
+  border: 1px solid #fda29b;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+[data-theme='dark'] .panel-error {
+  background: #451a1a;
+  color: #fecdd3;
+  border-color: #b91c1c;
+}
+
+.kpi-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.kpi-panel th,
+.kpi-panel td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.ml-panel .form-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ml-panel label {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.ml-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 12px;
+}
+
+.news-panel .news-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.news-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+  min-height: 90px;
+}
+[data-theme='dark'] .news-card {
+  border-color: #2c3a55;
+}
+
+.news-card a {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.news-thumb img {
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.news-card h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.news-card p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 12px;
+}
+[data-theme='dark'] .news-card p {
+  color: #cbd5e1;
+}
+
+.news-card span {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.4);
+  color: #fff;
+  z-index: 9999;
+  gap: 12px;
+}
+
+.loading-spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Left Pane */
-#left-pane {
-  width: 20%;
-  padding: 20px;
-  box-sizing: border-box;
-  border-right: 1px solid #ccc;
-  overflow-y: auto;
-}
-
 .watchlist-box,
 .market-box {
   border: 1px solid #ccc;
@@ -150,12 +523,27 @@ body {
   margin: 0 0 8px 0;
 }
 
+.item-header {
+  display: grid;
+  grid-template-columns: 56px minmax(48px, 1fr) minmax(48px, 1fr) minmax(48px, 1fr) 28px;
+  font-weight: 600;
+  font-size: 11px;
+  color: #6b7280;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 4px;
+}
+[data-theme='dark'] .item-header {
+  color: #cbd5e1;
+  border-color: #2c3a55;
+}
+
 /* Buttons */
 .primary-btn, .secondary-btn {
-  background-color: #fff;
+  background-color: #f8f9fb;
   border: 1px solid #ccc;
   color: #333;
-  padding: 4px 8px;
+  padding: 4px 10px;
   margin: 0 4px 0 0;
   border-radius: 6px;
   font-size: 12px;
@@ -164,10 +552,21 @@ body {
 .primary-btn:hover, .secondary-btn:hover {
   background-color: #eee;
 }
+[data-theme='dark'] .primary-btn,
+[data-theme='dark'] .secondary-btn,
+[data-theme='dark'] .timeframe-btn {
+  background-color: #24304a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+[data-theme='dark'] .primary-btn:hover,
+[data-theme='dark'] .secondary-btn:hover,
+[data-theme='dark'] .timeframe-btn:hover {
+  background-color: #2f3b58;
+}
 
 /* Watchlist & Market items */
-#watchlistItems,
-#marketIndexesList {
+#left-pane ul {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -187,7 +586,7 @@ body {
 /* We'll do row1 as a grid to fit Ticker, Price, Daily, YTD, Remove X in one row */
 .item-row1 {
   display: grid;
-  grid-template-columns: 60px 60px 80px 80px 24px; /* Ticker, Price, Daily, YTD, X */
+  grid-template-columns: 56px minmax(48px, 1fr) minmax(48px, 1fr) minmax(48px, 1fr) 28px;
   align-items: center;
   gap: 4px;
   margin-bottom: 2px;
@@ -205,6 +604,41 @@ body {
 .item-col-ytd {
   text-align: right;
 }
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.watchlist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sidebar-error {
+  background: #fff6f6;
+  color: #b42318;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #fda29b;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+[data-theme='dark'] .sidebar-error {
+  background: #451a1a;
+  color: #fecdd3;
+  border-color: #b91c1c;
+}
+
+#mlDaysDropdown .dropdown-item.selected::after {
+  content: "✓";
+  float: right;
+  color: #007aff;
+  font-weight: 600;
+}
 .item-col-remove {
   text-align: center;
   position: relative;
@@ -218,21 +652,29 @@ body {
 
 /* The remove watchlist "X" is inline in the last grid column */
 .remove-watchlist-btn {
-  font-size: 14px;
-  border-radius: 50%;
-  width: 20px;
-  height: 20px;
-  line-height: 18px;
-  text-align: center;
-  color: #333;
+  display: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: #4b5563;
   cursor: pointer;
-  display: none; /* only show on hover */
 }
 .item-container:hover .remove-watchlist-btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .remove-watchlist-btn:hover {
-  background-color: #eee;
+  background-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme='dark'] .remove-watchlist-btn {
+  color: #e2e8f0;
+}
+[data-theme='dark'] .remove-watchlist-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
 }
 
 /* color-coded up/down */
@@ -528,74 +970,6 @@ body {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-/* --- LAYOUT: fill the viewport, charts stretch to bottom --- */
-html, body {
-  height: 100%;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-#topRibbon {
-  flex: 0 0 auto;
-}
-
-#mainContainer {
-  flex: 1 1 auto;
-  display: flex;
-  min-height: 0; /* allow children to shrink */
-  overflow: hidden;
-}
-
-/* Side panes keep as-is but allow internal scroll */
-#left-pane, #right-pane {
-  overflow-y: auto;
-}
-
-/* Center pane becomes a vertical flex column */
-#center-pane {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;   /* keep internal scrolls contained */
-}
-
-/* Top stock info + controls are natural height */
-#stockInfo { flex: 0 0 auto; }
-#controlsRow { flex: 0 0 auto; }
-
-/* Charts section eats remaining space and pushes to bottom */
-#chartsSection {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 0; /* critical so children can flex */
-}
-
-/* Main chart grows; others fixed */
-#mainChartContainer {
-  flex: 1 1 auto;         /* grows to fill available height */
-  min-height: 360px;      /* a bit taller by default */
-  max-height: none;
-  display: flex;
-  flex-direction: column;
-}
-#mainChart { flex: 1 1 auto; }
-
 /* Keep volume & indicator at fixed heights */
 #volumeChartContainer { flex: 0 0 130px; height: 130px; }
 #indicatorChartContainer { flex: 0 0 160px; height: 160px; }
@@ -627,7 +1001,6 @@ body {
   border-radius: 6px;
   z-index: 9999;
   padding: 4px 0;
-  display: none;
 
   /* key changes */
   width: max-content;   /* expand to fit the widest item */
@@ -683,11 +1056,8 @@ body {
 
 
 
-
 #loadingOverlay { display: none; pointer-events: none; }
 #loadingOverlay[style*="display: flex"] { pointer-events: auto; }
-
-
 
 
 
@@ -721,4 +1091,16 @@ body {
 /* extra margin before the KPI table so it never touches the chart above */
 #kpiTableContainer {
   margin-top: 16px;          /* was 10px */
+}
+#left-pane {
+  align-self: start;
+}
+
+.news-column {
+  grid-column: 3;
+  align-self: start;
+}
+
+.news-column .news-panel {
+  height: auto;
 }

@@ -7,8 +7,22 @@ import yfinance as yf
 from yfinance import shared as yf_shared
 from yfinance.exceptions import YFRateLimitError
 from datetime import datetime, timedelta
+from threading import Lock
 
+STOCK_CACHE_TTL = 120  # seconds
+INDICATOR_CACHE_TTL = 300
+WATCHLIST_CACHE_TTL = 600
+WATCHLIST_CHUNK = 2
+PLACEHOLDER_TTL = 15
+STOCK_CACHE: dict[tuple[str, str, str], tuple[float, dict]] = {}
+INDICATOR_CACHE: dict[tuple[str, str, str], tuple[float, dict]] = {}
+WATCHLIST_CACHE: dict[str, tuple[float, dict]] = {}
+STOCK_PLACEHOLDERS: dict[tuple[str, str, str], float] = {}
+INDICATOR_PLACEHOLDERS: dict[tuple[str, str, str], float] = {}
 
+_YF_LOCK = Lock()
+_LAST_YF_CALL = 0.0
+_MIN_CALL_INTERVAL = 2.0
 def convert_numpy_types(d):
     new_d = {}
     for key, lst in d.items():
@@ -108,23 +122,109 @@ def slice_to_requested_period(df: pd.DataFrame, user_period: str) -> pd.DataFram
 def process_data(data, ticker):
     if isinstance(data.columns, pd.MultiIndex):
         try:
-            data = data.xs(ticker, level="Ticker", axis=1)
+            level_name = None
+            for name in data.columns.names:
+                if name and name.lower() in ("ticker", "tickers", "symbol", "symbols"):
+                    level_name = name
+                    break
+            if level_name:
+                data = data.xs(ticker, level=level_name, axis=1)
+            else:
+                data = data.xs(ticker, level=-1, axis=1)
         except Exception as e:
-            raise ValueError(f"Error extracting ticker {ticker} with xs: {e}")
+            raise ValueError(f"Error extracting ticker {ticker}: {e}")
     return data
+
+
+def _cache_get(cache: dict, key: tuple, ttl: int | None):
+    entry = cache.get(key)
+    if not entry:
+        return None
+    timestamp, value = entry
+    if ttl is None or time.time() - timestamp < ttl:
+        return value
+    return None
+
+
+def _placeholder_active(store: dict, key: tuple) -> bool:
+    ts = store.get(key)
+    if not ts:
+        return False
+    if time.time() - ts < PLACEHOLDER_TTL:
+        return True
+    store.pop(key, None)
+    return False
+
+
+def _set_placeholder(store: dict, key: tuple):
+    store[key] = time.time()
+
+
+def _cache_set(cache: dict, key: tuple, value: dict):
+    cache[key] = (time.time(), value)
+
+
+def _throttled_call(fn, *args, **kwargs):
+    global _LAST_YF_CALL
+    with _YF_LOCK:
+        wait = _MIN_CALL_INTERVAL - (time.time() - _LAST_YF_CALL)
+        if wait > 0:
+            time.sleep(wait)
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            _LAST_YF_CALL = time.time()
+
+
+def _download_prices(*args, retries: int = 5, **kwargs):
+    backoff = 1.5
+    last_err: Exception | None = None
+    for attempt in range(retries):
+        try:
+            data = _throttled_call(yf.download, *args, **kwargs)
+        except Exception as exc:
+            last_err = exc
+        else:
+            if _rate_limit_detected():
+                last_err = YFRateLimitError("Yahoo Finance rate limit exceeded.")
+            elif data.empty:
+                last_err = ValueError("No data found for request.")
+                break
+            else:
+                return data
+        time.sleep(backoff)
+        backoff *= 1.5
+    if isinstance(last_err, ValueError):
+        raise last_err
+    raise last_err or YFRateLimitError("Yahoo Finance rate limit exceeded.")
+
+
+def _empty_stock_payload():
+    return {"Date": [], "Open": [], "High": [], "Low": [], "Close": [], "Volume": []}
+
+
+def _empty_indicator_payload():
+    return {"Date": []}
 
 
 def get_stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
     extended_period = get_extended_period(period)
-    data = yf.download(
-        ticker, period=extended_period, interval=interval, auto_adjust=False
-    )
-    if _rate_limit_detected():
-        raise YFRateLimitError("Yahoo Finance rate limit exceeded.")
-    if data.empty:
-        if _rate_limit_detected():
-            raise YFRateLimitError("Yahoo Finance rate limit exceeded.")
-        raise ValueError(f"No data found for {ticker} in period {period}.")
+    cache_key = (ticker, period, interval)
+    if _placeholder_active(STOCK_PLACEHOLDERS, cache_key):
+        return _empty_stock_payload()
+    cached = _cache_get(STOCK_CACHE, cache_key, STOCK_CACHE_TTL)
+    if cached:
+        return cached
+    stale = _cache_get(STOCK_CACHE, cache_key, None)
+    try:
+        data = _download_prices(
+            ticker, period=extended_period, interval=interval, auto_adjust=False
+        )
+    except (YFRateLimitError, ValueError):
+        if stale:
+            return stale
+        _set_placeholder(STOCK_PLACEHOLDERS, cache_key)
+        return _empty_stock_payload()
     data = process_data(data, ticker)
     data.reset_index(inplace=True)
     if "Date" not in data.columns:
@@ -135,13 +235,14 @@ def get_stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
     data = slice_to_requested_period(data, period)
     d = data.to_dict(orient="list")
     d = convert_numpy_types(d)
+    _cache_set(STOCK_CACHE, cache_key, d)
     return d
 
 
 def get_kpi_data(ticker: str):
     stock = yf.Ticker(ticker)
     info = stock.info or {}
-    hist = stock.history(period="1d", interval="1d")
+    hist = _throttled_call(stock.history, period="1d", interval="1d")
     if not hist.empty:
         hist = hist.reset_index()
         open_price = hist["Open"].iloc[-1] if not hist["Open"].empty else None
@@ -154,7 +255,7 @@ def get_kpi_data(ticker: str):
         day_low = None
         day_high = None
 
-    hist_52w = stock.history(period="1y", interval="1d")
+    hist_52w = _throttled_call(stock.history, period="1y", interval="1d")
     if not hist_52w.empty:
         week_low_52 = hist_52w["Low"].min()
         week_high_52 = hist_52w["High"].max()
@@ -265,15 +366,22 @@ def compute_obv(close, volume):
 
 
 def get_technical_indicators(ticker: str, period: str = "1y", interval: str = "1d"):
-    data = yf.download(
-        ticker, period=period, interval=interval, auto_adjust=False
-    )
-    if _rate_limit_detected():
-        raise YFRateLimitError("Yahoo Finance rate limit exceeded.")
-    if data.empty:
-        if _rate_limit_detected():
-            raise YFRateLimitError("Yahoo Finance rate limit exceeded.")
-        raise ValueError(f"No data found for {ticker} in period {period}.")
+    cache_key = (ticker, period, interval)
+    if _placeholder_active(INDICATOR_PLACEHOLDERS, cache_key):
+        return _empty_indicator_payload()
+    cached = _cache_get(INDICATOR_CACHE, cache_key, INDICATOR_CACHE_TTL)
+    if cached:
+        return cached
+    stale = _cache_get(INDICATOR_CACHE, cache_key, None)
+    try:
+        data = _download_prices(
+            ticker, period=period, interval=interval, auto_adjust=False
+        )
+    except (YFRateLimitError, ValueError):
+        if stale:
+            return stale
+        _set_placeholder(INDICATOR_PLACEHOLDERS, cache_key)
+        return _empty_indicator_payload()
     data = process_data(data, ticker)
     data.dropna(subset=["Close"], inplace=True)
     # Removed strict 200-day check for flexibility
@@ -308,6 +416,7 @@ def get_technical_indicators(ticker: str, period: str = "1y", interval: str = "1
     df = df.where(pd.notnull(df), None)
     d = df.to_dict(orient="list")
     d = convert_numpy_types(d)
+    _cache_set(INDICATOR_CACHE, cache_key, d)
     return d
 
 
@@ -373,11 +482,6 @@ def _compute_watchlist_payload(df: pd.DataFrame) -> dict:
     }
 
 
-WATCHLIST_CACHE_TTL = 60  # seconds
-WATCHLIST_CACHE: dict[str, tuple[float, dict]] = {}
-WATCHLIST_CHUNK = 3
-
-
 def get_watchlist_batch(tickers: list[str]) -> dict:
     """
     Fetch watchlist metrics while batching downloads, caching recent responses,
@@ -399,21 +503,23 @@ def get_watchlist_batch(tickers: list[str]) -> dict:
             missing.append(t)
 
     for i in range(0, len(missing), WATCHLIST_CHUNK):
-        chunk = missing[i : i + WATCHLIST_CHUNK]
+        chunk = missing[i: i + WATCHLIST_CHUNK]
         if not chunk:
             continue
         try:
             chunk_payload = _download_watchlist_chunk(chunk)
-        except YFRateLimitError:
+        except (YFRateLimitError, ValueError):
             chunk_payload = {}
             for ticker in chunk:
-                try:
-                    chunk_payload.update(_download_watchlist_chunk([ticker]))
-                except YFRateLimitError:
+                cached_entry = WATCHLIST_CACHE.get(ticker)
+                if cached_entry:
+                    chunk_payload[ticker] = cached_entry[1]
+                else:
                     chunk_payload[ticker] = _default_watchlist_payload()
         for ticker, payload in chunk_payload.items():
             results[ticker] = payload
             WATCHLIST_CACHE[ticker] = (time.time(), payload)
+        time.sleep(0.8)
 
     for t in clean:
         results.setdefault(t, _default_watchlist_payload())
@@ -425,7 +531,7 @@ def _download_watchlist_chunk(tickers: list[str]) -> dict[str, dict]:
     if not tickers:
         return {}
     try:
-        hist = yf.download(
+        hist = _download_prices(
             tickers,
             period="7d",
             interval="1d",
@@ -433,23 +539,11 @@ def _download_watchlist_chunk(tickers: list[str]) -> dict[str, dict]:
             group_by="ticker",
             threads=False,
         )
-    except YFRateLimitError:
-        raise
+    except (YFRateLimitError, ValueError):
+        return {t: _default_watchlist_payload() | {"companyName": t} for t in tickers}
 
     if isinstance(hist, pd.Series):
         hist = hist.to_frame().T
-
-    if _rate_limit_detected():
-        raise YFRateLimitError("Yahoo Finance rate limit exceeded.")
-
-    info_lookup = {}
-    try:
-        tickers_obj = yf.Tickers(" ".join(tickers))
-        for t in tickers:
-            info_lookup[t] = getattr(tickers_obj.tickers.get(t), "info", {}) or {}
-    except Exception:
-        for t in tickers:
-            info_lookup[t] = {}
 
     chunk_results = {}
     for ticker in tickers:
@@ -458,10 +552,7 @@ def _download_watchlist_chunk(tickers: list[str]) -> dict[str, dict]:
         except Exception:
             subset = pd.DataFrame()
         payload = _compute_watchlist_payload(subset)
-        info = info_lookup.get(ticker, {})
-        name = info.get("shortName") or info.get("longName")
-        if name:
-            payload["companyName"] = name
+        payload["companyName"] = payload.get("companyName") or ticker
         chunk_results[ticker] = payload
     return chunk_results
 

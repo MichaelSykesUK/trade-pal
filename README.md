@@ -81,9 +81,9 @@ The frontend talks to the backend through REST calls; keep both processes runnin
 ```
 
 ## 🧠 Developer Notes
-- Yahoo Finance is rate-limited — requests are retried with exponential backoff.
+- Yahoo Finance is rate-limited — requests are retried with exponential backoff and cached on the backend.
 - The frontend fetches market/watchlist data via a single `/watchlist_data/batch` call and debounces autocomplete requests to stay under rate limits.
-- The legacy UI still runs inside Next.js so you can incrementally port DOM logic into React components.
+- The UI is implemented entirely in React/Next.js (header, sidebar, charts, KPI, ML controls); Lightweight Charts is loaded globally in `_app.jsx`.
 - ML model predictions support ARIMA, XGBoost, RandomForest, etc.
 
 ## 📌 Updating Dependencies
