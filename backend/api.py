@@ -359,16 +359,27 @@ def ml_predictions(
 
 
 # ---------- Static files ----------
-# Serve the frontend reliably using an absolute path.
-STATIC_DIR = (Path(__file__).resolve().parent.parent / "frontend").resolve()
+# Detect whichever frontend build exists (Vite, Next, or legacy) to avoid hard failures.
+BASE_DIR = Path(__file__).resolve().parent.parent
+STATIC_CANDIDATES = [
+    BASE_DIR / "frontend-vite" / "dist",
+    BASE_DIR / "frontend-vite",
+    BASE_DIR / "frontend-next" / "out",
+    BASE_DIR / "frontend-next",
+    BASE_DIR / "frontend",
+]
+STATIC_DIR = next((candidate for candidate in STATIC_CANDIDATES if candidate.exists()), None)
 
-# If you prefer the root to serve index.html directly:
+
 @app.get("/")
 def read_index():
+    if not STATIC_DIR:
+        raise HTTPException(404, "No frontend build directory found.")
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
-        raise HTTPException(404, "frontend/index.html not found")
+        raise HTTPException(404, f"Missing index.html in {STATIC_DIR}")
     return FileResponse(index_path)
 
-# Serve assets under /static (JS, CSS, images, etc.)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+if STATIC_DIR:
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")

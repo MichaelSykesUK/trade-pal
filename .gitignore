@@ -142,3 +142,4 @@ cython_debug/
 **old
 **influxdb_credentials.txt
 **temp
+backend/output/

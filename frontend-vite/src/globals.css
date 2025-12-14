@@ -1,0 +1,1265 @@
+:root {
+  --main-font: "Inter", sans-serif;
+  --main-font-size: 12px;
+}
+
+[data-theme='dark'] body {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+[data-theme='dark'] #topRibbon,
+[data-theme='dark'] .watchlist-box,
+[data-theme='dark'] .market-box,
+[data-theme='dark'] #center-pane,
+[data-theme='dark'] .news-box {
+  background-color: #182338;
+  border-color: #2c3a55;
+  box-shadow: none;
+}
+
+[data-theme='dark'] .timeframe-btn,
+[data-theme='dark'] .primary-btn,
+[data-theme='dark'] .secondary-btn,
+[data-theme='dark'] .semi-round-btn {
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+[data-theme='dark'] .item-container:hover {
+  background-color: #1f2b43;
+}
+
+body {
+  margin: 0;
+  font-family: var(--main-font);
+  font-size: var(--main-font-size);
+  background-color: #fff;
+  color: #333;
+  min-height: 100vh;
+}
+
+/* Top Ribbon */
+#topRibbon {
+  width: 100%;
+  background-color: #fff;
+  border-bottom: 1px solid #ccc;
+  padding: 8px 16px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#topRibbonLeft {
+  flex: 1;
+  display: flex;
+  justify-content: center; /* center the search bar horizontally */
+}
+#topRibbonRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dark-mode-toggle {
+  min-width: 100px;
+}
+
+#topSearchContainer {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  align-items: center;
+}
+
+#tickerSearch {
+  width: 100%;
+  padding: 8px 36px 8px 10px; /* add more vertical padding */
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px; /* bump font size */
+  height: 36px;     /* increase height */
+  box-sizing: border-box;
+}
+
+#tickerSearch:focus {
+  border-color: #007aff;
+}
+[data-theme='dark'] #tickerSearch {
+  background: #1f2b43;
+  border-color: #2c3a55;
+  color: #e2e8f0;
+}
+
+.search-clear-btn {
+  display: none; /* hide by default */
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  background: #f0f0f0;
+  z-index: 2;
+  color: #333;
+}
+
+.search-clear-btn:hover {
+  background-color: #eee;
+}
+
+/* The Search button is separate, with a left margin so there's space from the input. */
+.autocomplete-suggestions {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #ccc;
+  z-index: 9999;
+  display: none;
+}
+[data-theme='dark'] .autocomplete-suggestions {
+  background: #1f2b43;
+  border-color: #2c3a55;
+  color: #e2e8f0;
+}
+
+.suggestion-loading {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #666;
+}
+.suggestion-item {
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.suggestion-item:hover {
+  background-color: #eee;
+}
+[data-theme='dark'] .suggestion-item:hover {
+  background-color: #24304a;
+}
+
+/* Main Container */
+#mainContainer {
+  flex: 1;
+  display: grid;
+  /* left column auto-fits content within a sensible min/max, center column
+     takes remaining space, right column (news) has a fixed sensible width */
+  grid-template-columns: minmax(200px, 320px) minmax(0, 1fr) 320px;
+  gap: 18px;
+  padding: 20px 28px 32px;
+  box-sizing: border-box;
+  align-items: start;
+  width: 100%;
+}
+
+#left-pane {
+  grid-column: 1;
+  background: #fff;
+  padding: 14px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-self: start;
+  /* let the left pane grow naturally, avoid its own scrollbar */
+  max-height: none;
+  overflow: visible;
+}
+
+#mainContainer main {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.news-column {
+  grid-column: 3;
+  align-self: start;
+  /* keep a predictable width for the news column */
+  min-width: 320px;
+  max-width: 320px;
+}
+
+.news-column .news-panel {
+  position: sticky;
+  top: 90px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .news-column .news-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 1200px) {
+  #mainContainer {
+    grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-areas:
+      "sidebar main"
+      "sidebar news";
+  }
+  #left-pane {
+    grid-column: 1;
+  }
+  .news-column {
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 900px) {
+  #mainContainer {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "sidebar"
+      "main"
+      "news";
+  }
+  #left-pane,
+  #mainContainer main,
+  .news-column {
+    grid-column: 1;
+  }
+  .news-column .news-panel {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+[data-theme='dark'] #left-pane {
+  background: #1f2b43;
+  border: 1px solid #2c3a55;
+}
+
+[data-theme='dark'] .news-column .news-panel {
+  background: #1f2b43;
+  border-color: #2c3a55;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.main-content .panel-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.main-content .panel-row.two-col {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.5fr) minmax(360px, 1.2fr);
+  gap: 16px;
+}
+
+.panel-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.main-content .panel-row .panel {
+  flex: 1;
+  min-width: 260px;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.05);
+}
+.chart-panel {
+  min-height: 520px;
+}
+
+[data-theme='dark'] .panel {
+  background: #1f2b43;
+  border-color: #2c3a55;
+  color: #e2e8f0;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.chart-actions {
+  display: flex;
+  flex-wrap: wrap;
+  flex-direction: row;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+}
+.chart-type-toggle {
+  display: flex;
+  gap: 6px;
+}
+.chart-type-toggle button {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.chart-type-toggle button.active {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
+}
+[data-theme='dark'] .chart-type-toggle button {
+  background: #1f2b43;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+[data-theme='dark'] .chart-type-toggle button.active {
+  background: #6366f1;
+  border-color: #6366f1;
+  color: #fff;
+}
+
+.chart-title-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  flex: 1;
+}
+.ticker-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ticker-line h2 {
+  margin: 0;
+  font-size: 22px;
+}
+.company-line {
+  font-size: 13px;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+[data-theme='dark'] .company-line {
+  color: #cbd5e1;
+}
+.exchange-tag {
+  padding: 2px 6px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #1f2937;
+}
+[data-theme='dark'] .exchange-tag {
+  background: #2c3a55;
+  color: #e2e8f0;
+}
+.price-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 140px;
+}
+.current-price {
+  font-size: 26px;
+  font-weight: 600;
+}
+.price-delta {
+  font-size: 13px;
+}
+.price-line.price-up {
+  color: #059669;
+}
+.price-line.price-down {
+  color: #dc2626;
+}
+
+.chart-toolbar {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+.overlay-dropdown {
+  position: relative;
+}
+.overlay-dropdown .dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.dropdown-summary {
+  font-size: 11px;
+  color: #6b7280;
+}
+[data-theme='dark'] .dropdown-summary {
+  color: #cbd5e1;
+}
+.dropdown-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.18);
+  padding: 10px;
+  min-width: 170px;
+  z-index: 15;
+  display: grid;
+  gap: 6px;
+}
+[data-theme='dark'] .dropdown-panel {
+  background: #1f2b43;
+  border-color: #334155;
+}
+.dropdown-panel label {
+  font-size: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.timeframe-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.panel-subtitle {
+  color: #6b7280;
+  margin: 0;
+  font-size: 12px;
+}
+[data-theme='dark'] .panel-subtitle {
+  color: #cbd5e1;
+}
+
+.chart-container {
+  width: 100%;
+  min-height: 420px;
+  /* ensure the chart container matches panel background and doesn't show its own scrollbar */
+  background: transparent;
+}
+
+/* Force lightweight-charts canvases to inherit container background and
+   ensure dark-mode background is visible (library may add a canvas with
+   default white background). */
+.chart-container canvas,
+.indicator-chart canvas {
+  background-color: transparent !important;
+}
+.chart-container canvas.watermark-pane,
+.indicator-chart canvas.watermark-pane,
+.chart-container canvas[data-name='watermark'],
+.indicator-chart canvas[data-name='watermark'] {
+  display: none !important;
+}
+.chart-container .tv-lightweight-charts-logo,
+.indicator-chart .tv-lightweight-charts-logo,
+.chart-container [class*='watermark'],
+.indicator-chart [class*='watermark'] {
+  display: none !important;
+}
+
+[data-theme='dark'] .chart-container,
+[data-theme='dark'] .indicator-chart {
+  background-color: #0f172a; /* match chart theme background */
+}
+
+.indicator-chart {
+  width: 100%;
+  min-height: 160px;
+  margin-top: 8px;
+}
+
+.overlay-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.control-label {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.panel-error {
+  background: #fff3f3;
+  color: #b42318;
+  border: 1px solid #fda29b;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+[data-theme='dark'] .panel-error {
+  background: #451a1a;
+  color: #fecdd3;
+  border-color: #b91c1c;
+}
+
+.kpi-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.kpi-panel th,
+.kpi-panel td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px dashed #e5e7eb;
+}
+
+.ml-panel .form-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ml-panel label {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  gap: 4px;
+}
+
+.ml-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 6px;
+  margin: 10px 0;
+  font-size: 12px;
+}
+
+.news-panel .news-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.news-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+  min-height: 90px;
+}
+[data-theme='dark'] .news-card {
+  border-color: #2c3a55;
+}
+
+.news-card a {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.news-thumb img {
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.news-card h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.news-card p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 12px;
+}
+[data-theme='dark'] .news-card p {
+  color: #cbd5e1;
+}
+
+.news-card span {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.4);
+  color: #fff;
+  z-index: 9999;
+  gap: 12px;
+}
+
+.loading-spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Left Pane */
+.watchlist-box,
+.market-box {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 10px;
+  margin-bottom: 20px;
+  background-color: #fff;
+}
+.watchlist-box h2,
+.market-box h2 {
+  font-size: 14px;
+  margin: 0 0 8px 0;
+}
+
+.item-header {
+  display: grid;
+  grid-template-columns: 56px minmax(48px, 1fr) minmax(48px, 1fr) minmax(48px, 1fr) 28px;
+  font-weight: 600;
+  font-size: 11px;
+  color: #6b7280;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 4px;
+}
+[data-theme='dark'] .item-header {
+  color: #cbd5e1;
+  border-color: #2c3a55;
+}
+.item-header span {
+  text-align: right;
+}
+.item-header span:first-child {
+  text-align: left;
+}
+.item-header span:last-child {
+  text-align: center;
+}
+
+/* Buttons */
+.primary-btn, .secondary-btn {
+  background-color: #f8f9fb;
+  border: 1px solid #ccc;
+  color: #333;
+  padding: 4px 10px;
+  margin: 0 4px 0 0;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.primary-btn:hover, .secondary-btn:hover {
+  background-color: #eee;
+}
+[data-theme='dark'] .primary-btn,
+[data-theme='dark'] .secondary-btn,
+[data-theme='dark'] .timeframe-btn {
+  background-color: #24304a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+[data-theme='dark'] .primary-btn:hover,
+[data-theme='dark'] .secondary-btn:hover,
+[data-theme='dark'] .timeframe-btn:hover {
+  background-color: #2f3b58;
+}
+
+/* Watchlist & Market items */
+#left-pane ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+.item-container {
+  border-bottom: 1px solid #ccc;
+  padding: 6px 0;
+  position: relative;
+  cursor: pointer;
+}
+.item-container:hover {
+  background-color: #f5f5f5;
+}
+
+/* We'll do row1 as a grid to fit Ticker, Price, Daily, YTD, Remove X in one row */
+.item-row1 {
+  display: grid;
+  grid-template-columns: 56px minmax(48px, 1fr) minmax(48px, 1fr) minmax(48px, 1fr) 28px;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+.item-col-ticker {
+  font-weight: bold;
+}
+.item-col-price {
+  text-align: right;
+}
+.item-col-daily {
+  text-align: right;
+  font-weight: bold;
+}
+.item-col-ytd {
+  text-align: right;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.watchlist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sidebar-error {
+  background: #fff6f6;
+  color: #b42318;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #fda29b;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+[data-theme='dark'] .sidebar-error {
+  background: #451a1a;
+  color: #fecdd3;
+  border-color: #b91c1c;
+}
+
+#mlDaysDropdown .dropdown-item.selected::after {
+  content: "✓";
+  float: right;
+  color: #007aff;
+  font-weight: 600;
+}
+.item-col-remove {
+  text-align: center;
+  position: relative;
+}
+
+.item-row2 {
+  font-size: 11px;
+  color: #666;
+  margin: 0;
+}
+
+/* The remove watchlist "X" is inline in the last grid column */
+.remove-watchlist-btn {
+  display: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: #4b5563;
+  cursor: pointer;
+}
+.item-container:hover .remove-watchlist-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.remove-watchlist-btn:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme='dark'] .remove-watchlist-btn {
+  color: #e2e8f0;
+}
+[data-theme='dark'] .remove-watchlist-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* color-coded up/down */
+.up {
+  color: #009900;
+}
+.down {
+  color: #cc0000;
+}
+
+/* Center Pane */
+#center-pane {
+  width: 60%;
+  padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+#stockInfo {
+  margin-bottom: 10px;
+}
+#stockExchange {
+  margin-bottom: 2px;
+}
+
+/* Name row => name + add button on same line */
+#stockNameRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+#stockName {
+  margin: 0;
+  font-size: 18px;
+}
+
+#stockPriceContainer {
+  margin-bottom: 4px;
+}
+#stockPrice {
+  font-size: 20px;
+  font-weight: bold;
+  margin-right: 8px;
+}
+#stockChange {
+  font-weight: bold;
+}
+#stockChange.up {
+  color: #009900;
+}
+#stockChange.down {
+  color: #cc0000;
+}
+
+#stockDateContainer {
+  margin-bottom: 10px;
+}
+
+/* Add to Watchlist button in same row as name */
+.semi-round-btn {
+  border-radius: 9999px;
+  padding: 4px 12px;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  cursor: pointer;
+}
+.semi-round-btn:hover {
+  background-color: #eee;
+}
+
+/* Controls Row */
+#controlsRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.timeframe-btn {
+  background-color: #fff;
+  border: 1px solid #ccc;
+  padding: 4px 8px;
+  margin-right: 4px;
+  border-radius: 6px;
+  font-size: 12px;
+  height: 28px;
+  cursor: pointer;
+}
+.timeframe-btn:hover {
+  background-color: #ddd;
+}
+.timeframe-btn.active {
+  background-color: #007aff;
+  color: #fff;
+}
+
+#chartOptions {
+  display: flex;
+  gap: 8px;
+  position: relative;
+}
+.dropdown {
+  position: relative;
+}
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: #fff;
+  min-width: 120px;
+  max-width: 180px;
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  z-index: 9999;
+  padding: 4px 0;
+  top: 28px;
+}
+.dropdown.open .dropdown-content {
+  display: block;
+}
+.dropdown-item {
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dropdown-item:hover {
+  background-color: #eee;
+}
+.dropdown-item .tick {
+  margin-left: 4px;
+  color: #007aff;
+  display: none;
+}
+.dropdown-item.selected .tick {
+  display: inline;
+}
+.dropdown-content label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dropdown-content label:hover {
+  background-color: #eee;
+}
+.dropdown-content input[type="checkbox"] {
+  display: none;
+}
+.dropdown-content .tick {
+  margin-left: 4px;
+  color: #007aff;
+  display: none;
+  font-weight: bold;
+}
+.dropdown-content label.checked .tick {
+  display: inline;
+}
+.nice-select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  height: 28px;
+}
+
+/* Charts */
+#chartsSection {
+  margin-bottom: 10px;
+}
+#mainChartContainer,
+#volumeChartContainer,
+#indicatorChartContainer {
+  width: 100%;
+  border: 1px solid #ccc;
+  margin-bottom: 6px;
+  background-color: #fff;
+  position: relative;
+}
+#mainChartContainer {
+  height: 300px;
+}
+#volumeChartContainer {
+  height: 120px;
+}
+#indicatorChartContainer {
+  height: 150px;
+}
+#mainChart,
+#volumeChart,
+#indicatorChart {
+  width: 100%;
+  height: 100%;
+}
+
+/* KPI Table */
+#kpiTableContainer {
+  margin-top: 10px;
+  background-color: #fff;
+}
+#kpiTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+#kpiTable td {
+  padding: 4px;
+  vertical-align: top;
+  width: 16.6%;
+}
+
+/* Right Pane */
+#right-pane {
+  width: 20%;
+  padding: 20px;
+  box-sizing: border-box;
+  border-left: 1px solid #ccc;
+  overflow-y: auto;
+}
+#right-pane h2 {
+  font-size: 14px;
+  margin: 0 0 8px 0;
+}
+
+/* News container */
+.news-box {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 10px;
+  background-color: #fff;
+}
+#newsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+#newsList li {
+  margin-bottom: 12px;
+  border-bottom: 1px solid #ccc;
+  padding-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.news-item-text {
+  width: 60%;
+  box-sizing: border-box;
+}
+.news-thumbnail {
+  width: 160px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-left: 8px;
+}
+#newsList li a {
+  color: #000;
+  font-weight: bold;
+  text-decoration: none;
+  margin: 2px 0;
+  font-size: 12px;
+  display: block;
+}
+#newsList li a:hover {
+  color: #007aff;
+}
+.news-meta {
+  color: #666;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Loading Overlay */
+#loadingOverlay {
+  position: fixed;
+  top: 0; 
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0,0,0,0.5);
+  display: none;
+  justify-content: center;
+  align-items: center;
+  color: #fff;
+  font-size: 24px;
+  z-index: 10000;
+}
+
+
+/* Keep volume & indicator at fixed heights */
+#volumeChartContainer { flex: 0 0 130px; height: 130px; }
+#indicatorChartContainer { flex: 0 0 160px; height: 160px; }
+
+/* KPI table sits under charts; allow scrolling if needed */
+#kpiTableContainer {
+  flex: 0 0 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: 30vh; /* so on small screens details remain visible; adjust as you like */
+}
+
+/* --- DROPDOWNS: width, ticks inline, no unnecessary scrolling --- */
+#chartOptions {
+  display: flex;
+  flex-wrap: wrap;   /* allow wrapping on small widths */
+  gap: 8px;
+}
+
+.dropdown { position: relative; }
+
+/* size to content and keep ticks on the same line */
+.dropdown-content {
+  position: absolute;
+  top: 28px;
+  left: 0;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  z-index: 9999;
+  padding: 4px 0;
+
+  /* key changes */
+  width: max-content;   /* expand to fit the widest item */
+  min-width: 140px;
+  max-width: none;
+
+  /* remove default cap so ML Features can show all items */
+  max-height: none;     /* was 250px */
+  overflow: visible;    /* no scroll bar */
+  white-space: nowrap;  /* keep tick on same line */
+}
+
+.dropdown.open .dropdown-content { display: block; }
+
+.dropdown-item,
+.dropdown-content label {
+  display: flex;                     /* put text and tick on one line */
+  align-items: center;
+  justify-content: space-between;    /* pushes tick to right end */
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dropdown-item .tick,
+.dropdown-content .tick {
+  margin-left: 8px;
+  color: #007aff;
+  font-weight: 600;
+  display: none;           /* hidden until selected/checked */
+}
+
+/* Show tick when selected (single-select dropdowns) */
+.dropdown-item.selected .tick { display: inline; }
+
+/* Show tick when checkbox labels are checked (multi-select) */
+.dropdown-content label.checked .tick { display: inline; }
+
+/* Slightly larger hit-area for select buttons */
+.nice-select {
+  padding: 4px 10px;
+  height: 28px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+}
+
+/* --- SMALL NICE-TO-HAVES --- */
+#timeframeButtons { display: flex; flex-wrap: wrap; gap: 4px; }
+.timeframe-btn { margin-right: 0; } /* gap handles spacing */
+
+
+
+
+#loadingOverlay { display: none; pointer-events: none; }
+#loadingOverlay[style*="display: flex"] { pointer-events: auto; }
+
+
+
+/* --- prevent charts & axes from overlapping --- */
+#chartsSection {
+  gap: 12px;                 /* extra breathing room between chart blocks */
+}
+
+/* Reserve bottom space inside each chart container for the X-axis labels */
+#mainChartContainer,
+#volumeChartContainer,
+#indicatorChartContainer {
+  position: relative;
+  box-sizing: border-box;
+}
+
+#mainChartContainer { padding-bottom: 18px; }     /* more room for main x-axis */
+#volumeChartContainer { padding-bottom: 14px; }   /* keep volume labels clear */
+#indicatorChartContainer { padding-bottom: 14px; }
+
+#mainChart,
+#volumeChart,
+#indicatorChart {
+  height: 100%;
+  width: 100%;
+  /* make the chart fit above the padding space */
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+}
+
+/* extra margin before the KPI table so it never touches the chart above */
+#kpiTableContainer {
+  margin-top: 16px;          /* was 10px */
+}
+#left-pane {
+  align-self: start;
+}
+
+.news-column {
+  grid-column: 3;
+  align-self: start;
+}
+
+.news-column .news-panel {
+  height: auto;
+}

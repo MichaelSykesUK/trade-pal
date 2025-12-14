@@ -1,5 +1,6 @@
 # backend/ml.py
 
+from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -8,6 +9,9 @@ from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import GradientBoostingRegressor
 from xgboost import XGBRegressor
 import yfinance as yf
+
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class StockPredictionModel:
@@ -311,7 +315,7 @@ class StockPredictionModel:
 
         # Save results to CSV
         results_df = pd.DataFrame(self.X_list)
-        results_df.to_csv("X_list.csv", index=True, header=False)
+        results_df.to_csv(OUTPUT_DIR / "X_list.csv", index=True, header=False)
 
         # Scale features if a scaler is provided
         if self.scaler:
@@ -332,7 +336,7 @@ class StockPredictionModel:
 
         # Save results to CSV
         results_df = pd.DataFrame(X_weighted)
-        results_df.to_csv("X_weighted.csv", index=True, header=False)
+        results_df.to_csv(OUTPUT_DIR / "X_weighted.csv", index=True, header=False)
 
         # Train the model
         print(f"Model: {self.model}")
@@ -486,7 +490,7 @@ class StockPredictionModel:
         if self.model_type != "ARIMA":
             # Save results to CSV
             results_df = pd.DataFrame(results)
-            results_df.to_csv(f"{name}_projection_results.csv", index=False)
+            results_df.to_csv(OUTPUT_DIR / f"{name}_projection_results.csv", index=False)
 
         return prices
 
