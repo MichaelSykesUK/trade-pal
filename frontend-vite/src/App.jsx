@@ -83,13 +83,56 @@ const CANDLE_INTERVALS = [
   { key: '3m', label: '3M', value: '3mo' },
 ]
 const SCREENER_METRICS = [
-  { key: 'freeCashflow', label: 'Free Cash Flow' },
-  { key: 'fcfYield', label: 'FCF Yield' },
-  { key: 'operatingCashflow', label: 'Operating Cash Flow' },
-  { key: 'profitMargin', label: 'Profit Margin' },
-  { key: 'returnOnEquity', label: 'ROE' },
-  { key: 'debtToEquity', label: 'Debt / Equity' },
-  { key: 'marketCap', label: 'Market Cap' },
+  { key: 'fcfYield', label: 'FCF Yield', order: 'desc' },
+  { key: 'fcfMargin', label: 'FCF Margin', order: 'desc' },
+  { key: 'fcfToCapex', label: 'FCF / CapEx', order: 'desc' },
+  { key: 'fcfPerShare', label: 'FCF / Share', order: 'desc' },
+  { key: 'priceToFcf', label: 'P / FCF', order: 'asc' },
+  { key: 'evToFcf', label: 'EV / FCF', order: 'asc' },
+  { key: 'netDebtToEbitda', label: 'Net Debt / EBITDA', order: 'asc' },
+  { key: 'debtToEquity', label: 'Debt / Equity', order: 'asc' },
+  { key: 'interestCoverageEbit', label: 'Interest Coverage (EBIT)', order: 'desc' },
+  { key: 'fcfConversion', label: 'FCF Conversion', order: 'desc' },
+  { key: 'returnOnEquity', label: 'ROE', order: 'desc' },
+  { key: 'operatingMargin', label: 'Operating Margin', order: 'desc' },
+  { key: 'profitMargin', label: 'Profit Margin', order: 'desc' },
+  { key: 'evToEbitda', label: 'EV / EBITDA', order: 'asc' },
+  { key: 'trailingPE', label: 'P/E (TTM)', order: 'asc' },
+  { key: 'forwardPE', label: 'P/E (Forward)', order: 'asc' },
+  { key: 'pegRatio', label: 'PEG', order: 'asc' },
+  { key: 'priceToBook', label: 'Price / Book', order: 'asc' },
+  { key: 'priceToSales', label: 'Price / Sales', order: 'asc' },
+  { key: 'freeCashflow', label: 'Free Cash Flow', order: 'desc' },
+  { key: 'marketCap', label: 'Market Cap', order: 'desc' },
+]
+const SCREENER_COLUMNS = [
+  { key: 'ticker', label: 'Ticker', type: 'text', sticky: true },
+  { key: 'companyName', label: 'Company', type: 'text', sticky: true },
+  { key: 'sector', label: 'Sector', type: 'text' },
+  { key: 'marketCap', label: 'Mkt Cap', type: 'money' },
+  { key: 'freeCashflow', label: 'FCF', type: 'money' },
+  { key: 'fcfPerShare', label: 'FCF/Share', type: 'ratio' },
+  { key: 'fcfYield', label: 'FCF Yield', type: 'percent' },
+  { key: 'fcfMargin', label: 'FCF Margin', type: 'percent' },
+  { key: 'capitalExpenditures', label: 'CapEx', type: 'money' },
+  { key: 'fcfToCapex', label: 'FCF/CapEx', type: 'ratio' },
+  { key: 'priceToFcf', label: 'P/FCF', type: 'ratio' },
+  { key: 'evToFcf', label: 'EV/FCF', type: 'ratio' },
+  { key: 'netDebtToEbitda', label: 'Net Debt/EBITDA', type: 'ratio' },
+  { key: 'debtToEquity', label: 'Debt/Equity', type: 'ratio' },
+  { key: 'interestCoverageEbit', label: 'Int Cov (EBIT)', type: 'ratio' },
+  { key: 'interestCoverageCash', label: 'Int Cov (Cash)', type: 'ratio' },
+  { key: 'fcfConversion', label: 'FCF Conv', type: 'percent' },
+  { key: 'fcfConversionEbit', label: 'FCF/EBIT', type: 'percent' },
+  { key: 'returnOnEquity', label: 'ROE', type: 'percent' },
+  { key: 'evToEbitda', label: 'EV/EBITDA', type: 'ratio' },
+  { key: 'trailingPE', label: 'P/E (TTM)', type: 'ratio' },
+  { key: 'forwardPE', label: 'P/E (Fwd)', type: 'ratio' },
+  { key: 'pegRatio', label: 'PEG', type: 'ratio' },
+  { key: 'priceToBook', label: 'P/B', type: 'ratio' },
+  { key: 'priceToSales', label: 'P/S', type: 'ratio' },
+  { key: 'operatingMargin', label: 'Op Margin', type: 'percent' },
+  { key: 'profitMargin', label: 'Profit Margin', type: 'percent' },
 ]
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000'
 const PRICE_SCALE_WIDTH = 60
@@ -107,7 +150,14 @@ function App() {
   const [screenerRows, setScreenerRows] = useState([])
   const [screenerLoading, setScreenerLoading] = useState(false)
   const [screenerError, setScreenerError] = useState('')
-  const [screenerMetric, setScreenerMetric] = useState('freeCashflow')
+  const [screenerMetric, setScreenerMetric] = useState('fcfYield')
+  const [screenerOrder, setScreenerOrder] = useState('desc')
+  const [screenerOpen, setScreenerOpen] = useState(false)
+  const [screenerSort, setScreenerSort] = useState({ key: 'fcfYield', direction: 'desc' })
+  const [screenerQuery, setScreenerQuery] = useState('')
+  const [screenerAutoFill, setScreenerAutoFill] = useState(false)
+  const [screenerCooldown, setScreenerCooldown] = useState(0)
+  const [screenerUniverse, setScreenerUniverse] = useState(0)
   const [screenerRemaining, setScreenerRemaining] = useState(0)
   const [screenerComplete, setScreenerComplete] = useState(false)
   const [screenerRequested, setScreenerRequested] = useState(false)
@@ -236,8 +286,8 @@ function App() {
       try {
         const params = new URLSearchParams({
           metric: screenerMetric,
-          order: 'desc',
-          limit: '20',
+          order: screenerOrder,
+          limit: '0',
           refresh: refresh ? '1' : '0',
         })
         const resp = await fetch(`${API_BASE}/screener/sp500?${params.toString()}`)
@@ -245,16 +295,27 @@ function App() {
         if (!resp.ok) {
           throw new Error(data.detail || resp.statusText)
         }
-        setScreenerRows(Array.isArray(data.rows) ? data.rows : [])
+        const rows = Array.isArray(data.rows) ? data.rows : []
+        setScreenerRows((prev) => {
+          if (refresh) return rows
+          const merged = new Map(prev.map((row) => [row.ticker, row]))
+          rows.forEach((row) => {
+            const existing = merged.get(row.ticker) || {}
+            merged.set(row.ticker, { ...existing, ...row })
+          })
+          return Array.from(merged.values())
+        })
         setScreenerRemaining(data.remaining || 0)
         setScreenerComplete(Boolean(data.complete))
+        setScreenerUniverse(data.universeSize || 0)
+        setScreenerCooldown(Number(data.cooldownSeconds || 0))
       } catch (err) {
         setScreenerError(err.message || 'Unable to load screener.')
       } finally {
         setScreenerLoading(false)
       }
     },
-    [screenerMetric],
+    [screenerMetric, screenerOrder],
   )
 
   const runMl = useCallback(
@@ -392,6 +453,82 @@ function App() {
     [snapshots, watchlist],
   )
 
+  const handleScreenerMetricChange = useCallback((metric) => {
+    const meta = SCREENER_METRICS.find((item) => item.key === metric)
+    const nextOrder = meta?.order || 'desc'
+    setScreenerMetric(metric)
+    setScreenerOrder(nextOrder)
+    setScreenerSort({ key: metric, direction: nextOrder })
+  }, [])
+
+  const handleScreenerOrderChange = useCallback((order) => {
+    setScreenerOrder(order)
+    setScreenerSort((prev) => ({
+      key: prev.key || screenerMetric,
+      direction: order,
+    }))
+  }, [screenerMetric])
+
+  const handleScreenerSort = useCallback((key) => {
+    setScreenerSort((prev) => {
+      if (prev.key === key) {
+        const nextDir = prev.direction === 'asc' ? 'desc' : 'asc'
+        return { key, direction: nextDir }
+      }
+      return { key, direction: 'desc' }
+    })
+  }, [])
+
+  const screenerDisplayRows = useMemo(() => {
+    const query = screenerQuery.trim().toLowerCase()
+    let rows = Array.isArray(screenerRows) ? [...screenerRows] : []
+    if (query) {
+      rows = rows.filter((row) => {
+        const haystack = `${row.ticker || ''} ${row.companyName || ''} ${row.sector || ''} ${row.industry || ''}`.toLowerCase()
+        return haystack.includes(query)
+      })
+    }
+    const sortKey = screenerSort.key || screenerMetric
+    const direction = screenerSort.direction || screenerOrder
+    rows.sort((a, b) => {
+      const aVal = a?.[sortKey]
+      const bVal = b?.[sortKey]
+      const aNum = typeof aVal === 'number' && !Number.isNaN(aVal) ? aVal : null
+      const bNum = typeof bVal === 'number' && !Number.isNaN(bVal) ? bVal : null
+      if (aNum == null && bNum == null) {
+        const aStr = typeof aVal === 'string' ? aVal.toLowerCase() : null
+        const bStr = typeof bVal === 'string' ? bVal.toLowerCase() : null
+        if (aStr == null && bStr == null) return 0
+        if (aStr == null) return 1
+        if (bStr == null) return -1
+        return direction === 'asc' ? aStr.localeCompare(bStr) : bStr.localeCompare(aStr)
+      }
+      if (aNum == null) return 1
+      if (bNum == null) return -1
+      return direction === 'asc' ? aNum - bNum : bNum - aNum
+    })
+    return rows
+  }, [screenerRows, screenerQuery, screenerSort, screenerMetric, screenerOrder])
+
+  useEffect(() => {
+    if (!screenerAutoFill) return
+    if (screenerComplete) {
+      setScreenerAutoFill(false)
+      return
+    }
+    if (screenerError) {
+      setScreenerAutoFill(false)
+      return
+    }
+    if (screenerLoading) return
+
+    const delay = screenerCooldown > 0 ? screenerCooldown * 1000 + 500 : screenerRequested ? 6000 : 800
+    const handle = setTimeout(() => {
+      fetchScreener({ refresh: !screenerRequested })
+    }, delay)
+    return () => clearTimeout(handle)
+  }, [screenerAutoFill, screenerComplete, screenerError, screenerLoading, screenerRequested, fetchScreener])
+
   const latestPrice = tickerData?.candles?.[tickerData.candles.length - 1]?.close ?? null
   const previousPrice = tickerData?.candles?.[tickerData.candles.length - 2]?.close ?? null
   const priceDelta = latestPrice != null && previousPrice != null ? latestPrice - previousPrice : null
@@ -422,15 +559,14 @@ function App() {
           onSelect={(symbol) => setSelectedTicker(symbol)}
           onRemove={handleRemoveWatchlist}
           onRefresh={fetchSnapshots}
-          screenerRows={screenerRows}
           screenerLoading={screenerLoading}
           screenerError={screenerError}
           screenerMetric={screenerMetric}
-          screenerRemaining={screenerRemaining}
-          screenerComplete={screenerComplete}
           screenerRequested={screenerRequested}
-          onScreenerMetricChange={setScreenerMetric}
+          screenerRemaining={screenerRemaining}
+          onScreenerMetricChange={handleScreenerMetricChange}
           onScreenerLoad={fetchScreener}
+          onOpenScreener={() => setScreenerOpen(true)}
         />
 
         <main className="main-content">
@@ -469,6 +605,36 @@ function App() {
           <NewsList news={news} />
         </aside>
       </div>
+
+        <ScreenerModal
+          open={screenerOpen}
+          rows={screenerDisplayRows}
+          loading={screenerLoading}
+          error={screenerError}
+          metric={screenerMetric}
+          order={screenerOrder}
+          remaining={screenerRemaining}
+          complete={screenerComplete}
+          requested={screenerRequested}
+          universeSize={screenerUniverse}
+          autoFill={screenerAutoFill}
+          cooldownSeconds={screenerCooldown}
+          sortKey={screenerSort.key}
+          sortDirection={screenerSort.direction}
+          query={screenerQuery}
+          onQueryChange={setScreenerQuery}
+          onClose={() => setScreenerOpen(false)}
+          onMetricChange={handleScreenerMetricChange}
+          onOrderChange={handleScreenerOrderChange}
+          onRefresh={() => fetchScreener({ refresh: true })}
+          onLoadMore={() => fetchScreener({ refresh: false })}
+          onToggleAutoFill={() => setScreenerAutoFill((prev) => !prev)}
+          onSort={handleScreenerSort}
+          onSelect={(ticker) => {
+            setSelectedTicker(ticker)
+            setScreenerOpen(false)
+          }}
+        />
 
       {(dataLoading || mlLoading) && (
         <LoadingOverlay label={dataLoading ? 'Loading data...' : 'Running ML...'} />
@@ -577,15 +743,14 @@ function Sidebar({
   onSelect,
   onRemove,
   onRefresh,
-  screenerRows,
   screenerLoading,
   screenerError,
   screenerMetric,
-  screenerRemaining,
-  screenerComplete,
   screenerRequested,
+  screenerRemaining,
   onScreenerMetricChange,
   onScreenerLoad,
+  onOpenScreener,
 }) {
   return (
     <aside id="left-pane">
@@ -652,18 +817,14 @@ function Sidebar({
         <div className="section-header">
           <h2>S&P 500 Screener</h2>
           <div className="watchlist-actions">
-            <button
-              className="secondary-btn"
-              onClick={() => onScreenerLoad({ refresh: true })}
-              disabled={screenerLoading}
-            >
-              {screenerRequested ? 'Refresh' : 'Load'}
+            <button className="secondary-btn" onClick={onOpenScreener}>
+              Open
             </button>
           </div>
         </div>
         <div className="screener-controls">
           <label>
-            Metric
+            Rank by
             <select value={screenerMetric} onChange={(e) => onScreenerMetricChange(e.target.value)}>
               {SCREENER_METRICS.map((metric) => (
                 <option key={metric.key} value={metric.key}>
@@ -673,32 +834,201 @@ function Sidebar({
             </select>
           </label>
         </div>
-        {screenerError && <div className="sidebar-error">{screenerError}</div>}
-        <ul>
-          {!screenerRequested && <li className="item-row2">Click Load to fetch rankings.</li>}
-          {screenerRequested && screenerRows.length === 0 && !screenerLoading && (
-            <li className="item-row2">No screener data yet.</li>
+        <div className="screener-summary">
+          {!screenerRequested && <span>Load the table to start scouting undervalued names.</span>}
+          {screenerRequested && screenerLoading && <span>Updating screener data…</span>}
+          {screenerRequested && !screenerLoading && (
+            <span>
+              {screenerRemaining ? `${screenerRemaining} tickers left to fetch.` : 'Screener data ready.'}
+            </span>
           )}
-          {screenerRows.map((row) => (
-            <li key={row.ticker} className="item-container" onClick={() => onSelect(row.ticker)}>
-              <div className="item-row1">
-                <div className="item-col-ticker">{row.ticker}</div>
-                <div className="item-col-price">{formatScreenerValue(screenerMetric, row.metricValue)}</div>
-                <div className="item-col-daily">{row.exchange || '—'}</div>
-                <div className="item-col-ytd">{row.companyName || 'Unknown'}</div>
-                <div className="item-col-remove"></div>
-              </div>
-              <div className="item-row2">{row.sector || row.industry || '—'}</div>
-            </li>
-          ))}
-        </ul>
-        {screenerRequested && !screenerComplete && (
-          <button className="secondary-btn" onClick={() => onScreenerLoad({ refresh: false })} disabled={screenerLoading}>
-            {screenerLoading ? 'Loading…' : `Load more (${screenerRemaining} remaining)`}
+        </div>
+        {screenerError && <div className="sidebar-error">{screenerError}</div>}
+        <div className="screener-actions">
+          <button
+            className="secondary-btn"
+            onClick={() => onScreenerLoad({ refresh: true })}
+            disabled={screenerLoading}
+          >
+            {screenerRequested ? 'Refresh data' : 'Load data'}
           </button>
-        )}
+        </div>
       </div>
     </aside>
+  )
+}
+
+function ScreenerModal({
+  open,
+  rows,
+  loading,
+  error,
+  metric,
+  order,
+  remaining,
+  complete,
+  requested,
+  universeSize,
+  autoFill,
+  cooldownSeconds,
+  sortKey,
+  sortDirection,
+  query,
+  onQueryChange,
+  onClose,
+  onMetricChange,
+  onOrderChange,
+  onRefresh,
+  onLoadMore,
+  onToggleAutoFill,
+  onSort,
+  onSelect,
+}) {
+  const columnStats = useMemo(() => {
+    const stats = {}
+    SCREENER_COLUMNS.forEach((col) => {
+      if (col.type === 'text') return
+      const values = rows
+        .map((row) => row?.[col.key])
+        .filter((value) => typeof value === 'number' && !Number.isNaN(value))
+        .sort((a, b) => a - b)
+      if (!values.length) return
+      const hiIdx = Math.floor(values.length * 0.9)
+      const loIdx = Math.floor(values.length * 0.1)
+      stats[col.key] = {
+        hi: values[Math.min(values.length - 1, hiIdx)],
+        lo: values[Math.max(0, loIdx)],
+      }
+    })
+    return stats
+  }, [rows])
+
+  if (!open) return null
+
+  return (
+    <div className="screener-modal">
+      <div className="screener-backdrop" onClick={onClose} />
+      <div className="screener-panel">
+        <div className="screener-header">
+          <div>
+            <h2>S&P 500 Screener</h2>
+            <p>
+              Find undervalued candidates with multi-factor ratios and KPIs.
+              {universeSize ? ` Universe: ${universeSize}.` : ''}
+            </p>
+          </div>
+          <button className="secondary-btn" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        <div className="screener-toolbar">
+          <label>
+            Rank by
+            <select value={metric} onChange={(e) => onMetricChange(e.target.value)}>
+              {SCREENER_METRICS.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Order
+            <select value={order} onChange={(e) => onOrderChange(e.target.value)}>
+              <option value="desc">High → Low</option>
+              <option value="asc">Low → High</option>
+            </select>
+          </label>
+          <label className="screener-search">
+            Filter
+            <input
+              type="text"
+              placeholder="Ticker, company, sector…"
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+            />
+          </label>
+          <div className="screener-actions">
+            <button className="secondary-btn" onClick={onRefresh} disabled={loading}>
+              {requested ? 'Refresh' : 'Load'}
+            </button>
+            <button className="secondary-btn" onClick={onLoadMore} disabled={loading || complete}>
+              {complete ? 'Fully loaded' : `Load more${remaining ? ` (${remaining} left)` : ''}`}
+            </button>
+            <button className={`secondary-btn ${autoFill ? 'active' : ''}`} onClick={onToggleAutoFill}>
+              {autoFill ? 'Auto fill: On' : 'Auto fill: Off'}
+            </button>
+            {cooldownSeconds > 0 && <span className="cooldown-badge">Cooldown ~{cooldownSeconds}s</span>}
+          </div>
+        </div>
+
+        {error && <div className="panel-error">{error}</div>}
+        {!requested && !loading && <div className="panel-subtitle">Click Load to fetch screener data.</div>}
+        {requested && (
+          <div className="panel-subtitle">
+            Loaded {rows.length} tickers{remaining ? `, ${remaining} remaining` : ''}.
+            {autoFill ? ' Auto-fill is running.' : ''}
+          </div>
+        )}
+
+        <div className="screener-table-wrap">
+          <table className="screener-table">
+            <thead>
+              <tr>
+                {SCREENER_COLUMNS.map((col) => (
+                  <th
+                    key={col.key}
+                    className={`${col.sticky ? 'sticky' : ''} ${col.type !== 'text' ? 'numeric' : ''} ${sortKey === col.key ? 'sorted' : ''}`}
+                    onClick={() => onSort(col.key)}
+                  >
+                    <span>{col.label}</span>
+                    {sortKey === col.key && (
+                      <span className="sort-indicator">{sortDirection === 'asc' ? '▲' : '▼'}</span>
+                    )}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={SCREENER_COLUMNS.length} className="empty">
+                    {loading ? 'Loading rows…' : 'No screener rows to show yet.'}
+                  </td>
+                </tr>
+              )}
+              {rows.map((row) => (
+                <tr key={row.ticker} onClick={() => onSelect(row.ticker)}>
+                  {SCREENER_COLUMNS.map((col) => {
+                    const value = row?.[col.key]
+                    const stats = columnStats[col.key]
+                    const highlight =
+                      col.type !== 'text' && typeof value === 'number'
+                        ? value >= (stats?.hi ?? Infinity)
+                          ? 'heat-high'
+                          : value <= (stats?.lo ?? -Infinity)
+                          ? 'heat-low'
+                          : ''
+                        : ''
+                    return (
+                      <td
+                        key={col.key}
+                        className={`${col.sticky ? 'sticky' : ''} ${col.type !== 'text' ? 'numeric' : ''} ${highlight}`}
+                      >
+                        {formatScreenerCell(col, value)}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {loading && <div className="panel-subtitle">Fetching more ticker fundamentals…</div>}
+      </div>
+    </div>
   )
 }
 
@@ -761,8 +1091,14 @@ function ChartPanel({
   const [activeOverlays, setActiveOverlays] = useState(() => new Set(['MA50']))
   const [activeIndicators, setActiveIndicators] = useState(() => new Set(['rsi', 'macd']))
   const [chartType, setChartType] = useState('candles')
+  const [patternsActive, setPatternsActive] = useState(false)
   const [overlayMenuOpen, setOverlayMenuOpen] = useState(false)
   const overlayMenuRef = useRef(null)
+  const barSpacing = useMemo(() => getBarSpacing(period, intervalOverride), [period, intervalOverride])
+  const baseIntervalLabel = useMemo(() => {
+    const found = TIMEFRAMES.find((item) => item.value === period)?.interval
+    return found ? found.toUpperCase() : '1D'
+  }, [period])
 
   const zeroBasedAutoscaleProvider = useCallback(
     (accessor) => () => {
@@ -809,6 +1145,81 @@ function ChartPanel({
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
+  const patternRef = useRef({ lines: [], markers: [] })
+
+  const clearPatternOverlays = useCallback(() => {
+    if (!chartRef.current) return
+    const { chart, priceSeries } = chartRef.current
+    if (!chart || !priceSeries) return
+    patternRef.current.lines.forEach((series) => {
+      try {
+        chart.removeSeries(series)
+      } catch (_) {}
+    })
+    patternRef.current.lines = []
+    patternRef.current.markers = []
+    try {
+      priceSeries.setMarkers([])
+    } catch (_) {}
+  }, [])
+
+  const applyPatternOverlays = useCallback(
+    (patterns) => {
+      if (!chartRef.current || !patterns) return
+      const { chart, priceSeries } = chartRef.current
+      if (!chart || !priceSeries) return
+      clearPatternOverlays()
+
+      const sortByTime = (points) => points.slice().sort((a, b) => a.time - b.time)
+      const lines = []
+      if (patterns.levels?.length) {
+        patterns.levels.forEach((level) => {
+          const series = chart.addLineSeries({
+            color: level.kind === 'support' ? '#10b981' : '#ef4444',
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          })
+          const first = data.candles?.[0]?.time
+          const last = data.candles?.[data.candles.length - 1]?.time
+          if (first && last) {
+            series.setData(
+              sortByTime([
+                { time: first, value: level.value },
+                { time: last, value: level.value },
+              ]),
+            )
+          }
+          lines.push(series)
+        })
+      }
+      if (patterns.necklines?.length) {
+        patterns.necklines.forEach((neckline) => {
+          const series = chart.addLineSeries({
+            color: '#94a3b8',
+            lineWidth: 1,
+            lineStyle: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          })
+          const points = Array.isArray(neckline.points) ? sortByTime(neckline.points) : []
+          if (points.length) {
+            series.setData(points)
+          }
+          lines.push(series)
+        })
+      }
+      if (patterns.markers?.length) {
+        const sortedMarkers = patterns.markers.slice().sort((a, b) => a.time - b.time)
+        priceSeries.setMarkers(sortedMarkers)
+        patternRef.current.markers = sortedMarkers
+      }
+      patternRef.current.lines = lines
+    },
+    [clearPatternOverlays, data.candles],
+  )
+
   useEffect(() => {
     if (!containerRef.current || !indicatorContainerRef.current) return
 
@@ -843,7 +1254,7 @@ function ChartPanel({
       height: 420,
       layout: buildLayout(),
       grid: buildGrid(),
-      timeScale: { borderColor: theme.border, visible: true, rightOffset: 12 },
+      timeScale: { borderColor: theme.border, visible: true, rightOffset: 4 },
       rightPriceScale: buildRightScale({ top: 0.05, bottom: 0.15 }),
       leftPriceScale: buildLeftScale({ top: 0.82, bottom: 0 }),
       crosshair: { mode: 1 },
@@ -892,7 +1303,7 @@ function ChartPanel({
       height: 180,
       layout: buildLayout(),
       grid: buildGrid(),
-      timeScale: { borderColor: theme.border, visible: true, rightOffset: 12 },
+      timeScale: { borderColor: theme.border, visible: true, rightOffset: 4 },
       rightPriceScale: {
         ...buildRightScale({ top: 0.1, bottom: 0.1 }),
         entireTextOnly: true,
@@ -956,6 +1367,38 @@ function ChartPanel({
       indicatorSeriesRef.current = {}
     }
   }, [darkMode, theme, zeroBasedAutoscaleProvider, chartType])
+
+  useEffect(() => {
+    if (!chartRef.current) return
+    const spacing = barSpacing
+    const applySpacing = (chart) => {
+      chart.timeScale().applyOptions({
+        barSpacing: spacing,
+        minBarSpacing: Math.max(2, spacing * 0.6),
+        rightOffset: 1,
+        fixLeftEdge: true,
+        fixRightEdge: true,
+      })
+      chart.timeScale().fitContent()
+    }
+    applySpacing(chartRef.current.chart)
+    if (indicatorChartRef.current) {
+      applySpacing(indicatorChartRef.current)
+    }
+  }, [barSpacing, data])
+
+  useEffect(() => {
+    if (!patternsActive) return
+    if (!data.candles?.length) return
+    const patterns = detectPatterns(data.candles)
+    applyPatternOverlays(patterns)
+  }, [patternsActive, data.candles, applyPatternOverlays])
+
+  useEffect(() => {
+    if (!patternsActive) return
+    clearPatternOverlays()
+    setPatternsActive(false)
+  }, [ticker, period, intervalOverride, chartType, clearPatternOverlays])
 
   useEffect(() => {
     if (!chartRef.current) return
@@ -1126,17 +1569,20 @@ function ChartPanel({
               </button>
             ))}
           </div>
-          <div className="interval-controls">
-            {CANDLE_INTERVALS.map((item) => (
-              <button
-                key={item.key}
-                className={`timeframe-btn ${item.value === intervalOverride ? 'active' : ''}`}
-                onClick={() => onIntervalChange(item.value)}
-                type="button"
+          <div className="interval-select">
+            <label>
+              Candle interval
+              <select
+                value={intervalOverride ?? ''}
+                onChange={(e) => onIntervalChange(e.target.value ? e.target.value : null)}
               >
-                {item.label}
-              </button>
-            ))}
+                {CANDLE_INTERVALS.map((item) => (
+                  <option key={item.key} value={item.value ?? ''}>
+                    {item.value ? item.label : `Auto (${baseIntervalLabel})`}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <div className="chart-type-toggle">
             {CHART_TYPES.map((type) => (
@@ -1187,6 +1633,13 @@ function ChartPanel({
             </div>
           )}
         </div>
+        <button
+          type="button"
+          className={`secondary-btn ${patternsActive ? 'active' : ''}`}
+          onClick={() => setPatternsActive((prev) => !prev)}
+        >
+          Patterns
+        </button>
       </div>
       {error && <div className="panel-error">{error}</div>}
       {!error && (!data.candles || data.candles.length === 0) && (
@@ -1277,10 +1730,40 @@ function KpiTable({ kpi }) {
             <td>{formatNumber(kpi.currentRatio)}</td>
           </tr>
           <tr>
+            <th>FCF / Share</th>
+            <td>{formatNumber(kpi.fcfPerShare)}</td>
+            <th>P / FCF</th>
+            <td>{formatNumber(kpi.priceToFcf)}</td>
+          </tr>
+          <tr>
+            <th>EV / FCF</th>
+            <td>{formatNumber(kpi.evToFcf)}</td>
+            <th>FCF Conversion</th>
+            <td>{formatPercent(kpi.fcfConversion)}</td>
+          </tr>
+          <tr>
+            <th>FCF Margin</th>
+            <td>{formatPercent(kpi.fcfMargin)}</td>
+            <th>CapEx</th>
+            <td>{formatLargeNumber(kpi.capitalExpenditures)}</td>
+          </tr>
+          <tr>
             <th>Total Cash</th>
             <td>{formatLargeNumber(kpi.totalCash)}</td>
             <th>Total Debt</th>
             <td>{formatLargeNumber(kpi.totalDebt)}</td>
+          </tr>
+          <tr>
+            <th>Net Debt</th>
+            <td>{formatLargeNumber(kpi.netDebt)}</td>
+            <th>Net Debt / EBITDA</th>
+            <td>{formatNumber(kpi.netDebtToEbitda)}</td>
+          </tr>
+          <tr>
+            <th>Int Coverage (EBIT)</th>
+            <td>{formatNumber(kpi.interestCoverageEbit)}</td>
+            <th>Int Coverage (Cash)</th>
+            <td>{formatNumber(kpi.interestCoverageCash)}</td>
           </tr>
           <tr>
             <th>Debt / Equity</th>
@@ -1295,10 +1778,28 @@ function KpiTable({ kpi }) {
             <td>{formatPercent(kpi.profitMargin)}</td>
           </tr>
           <tr>
+            <th>EV / EBITDA</th>
+            <td>{formatNumber(kpi.evToEbitda)}</td>
+            <th>Enterprise Value</th>
+            <td>{formatLargeNumber(kpi.enterpriseValue)}</td>
+          </tr>
+          <tr>
+            <th>FCF / EBIT</th>
+            <td>{formatPercent(kpi.fcfConversionEbit)}</td>
+            <th>PEG</th>
+            <td>{formatNumber(kpi.pegRatio)}</td>
+          </tr>
+          <tr>
             <th>ROE</th>
             <td>{formatPercent(kpi.returnOnEquity)}</td>
             <th>ROA</th>
             <td>{formatPercent(kpi.returnOnAssets)}</td>
+          </tr>
+          <tr>
+            <th>Price / Book</th>
+            <td>{formatNumber(kpi.priceToBook)}</td>
+            <th>Price / Sales</th>
+            <td>{formatNumber(kpi.priceToSales)}</td>
           </tr>
           <tr>
             <th>Dividend</th>
@@ -1496,6 +1997,312 @@ function buildOverlaySeries(indicators, key) {
   }).filter(Boolean)
 }
 
+function detectPatterns(candles) {
+  if (!candles || candles.length < 30) return { levels: [], markers: [], necklines: [] }
+  const highs = candles.map((c) => c.high ?? c.close)
+  const lows = candles.map((c) => c.low ?? c.close)
+  const closes = candles.map((c) => c.close)
+  const times = candles.map((c) => c.time)
+
+  const pivots = findPivots(highs, lows, 3)
+  const resistanceClusters = clusterLevels(pivots.highs, 0.006, 2)
+  const supportClusters = clusterLevels(pivots.lows, 0.006, 2)
+  const levels = [
+    ...supportClusters.slice(0, 3).map((lvl) => ({ value: lvl.value, kind: 'support' })),
+    ...resistanceClusters.slice(0, 3).map((lvl) => ({ value: lvl.value, kind: 'resistance' })),
+  ]
+
+  const markers = []
+  const necklines = []
+
+  const doubleTop = detectDoubleTop(pivots.highs, lows)
+  if (doubleTop) {
+    markers.push({
+      time: times[doubleTop.index],
+      position: 'aboveBar',
+      color: '#ef4444',
+      shape: 'arrowDown',
+      text: 'Double Top',
+    })
+  }
+
+  const doubleBottom = detectDoubleBottom(pivots.lows, highs)
+  if (doubleBottom) {
+    markers.push({
+      time: times[doubleBottom.index],
+      position: 'belowBar',
+      color: '#10b981',
+      shape: 'arrowUp',
+      text: 'Double Bottom',
+    })
+  }
+
+  const hns = detectHeadShoulders(pivots.highs, lows)
+  if (hns) {
+    markers.push({
+      time: times[hns.headIndex],
+      position: 'aboveBar',
+      color: '#f97316',
+      shape: 'arrowDown',
+      text: 'Head & Shoulders',
+    })
+    necklines.push({
+      points: [
+        { time: times[hns.neckline[0]], value: lows[hns.neckline[0]] },
+        { time: times[hns.neckline[1]], value: lows[hns.neckline[1]] },
+      ],
+    })
+  }
+
+  const ihs = detectInverseHeadShoulders(pivots.lows, highs)
+  if (ihs) {
+    markers.push({
+      time: times[ihs.headIndex],
+      position: 'belowBar',
+      color: '#0ea5e9',
+      shape: 'arrowUp',
+      text: 'Inverse H&S',
+    })
+    necklines.push({
+      points: [
+        { time: times[ihs.neckline[0]], value: highs[ihs.neckline[0]] },
+        { time: times[ihs.neckline[1]], value: highs[ihs.neckline[1]] },
+      ],
+    })
+  }
+
+  const flag = detectFlag(candles)
+  if (flag) {
+    markers.push({
+      time: times[candles.length - 1],
+      position: flag.type === 'bull' ? 'belowBar' : 'aboveBar',
+      color: flag.type === 'bull' ? '#22c55e' : '#ef4444',
+      shape: flag.type === 'bull' ? 'arrowUp' : 'arrowDown',
+      text: flag.type === 'bull' ? 'Bull Flag' : 'Bear Flag',
+    })
+  }
+
+  const triangle = detectTriangle(pivots, candles)
+  if (triangle) {
+    markers.push({
+      time: times[candles.length - 1],
+      position: 'aboveBar',
+      color: '#6366f1',
+      shape: 'circle',
+      text: triangle,
+    })
+  }
+
+  const breakout = detectBreakout(closes, levels)
+  if (breakout) {
+    markers.push({
+      time: times[candles.length - 1],
+      position: breakout.type === 'up' ? 'belowBar' : 'aboveBar',
+      color: breakout.type === 'up' ? '#22c55e' : '#ef4444',
+      shape: breakout.type === 'up' ? 'arrowUp' : 'arrowDown',
+      text: breakout.type === 'up' ? 'Breakout' : 'Breakdown',
+    })
+  }
+
+  return { levels, markers, necklines }
+}
+
+function findPivots(highs, lows, window = 3) {
+  const highsOut = []
+  const lowsOut = []
+  for (let i = window; i < highs.length - window; i += 1) {
+    const highSlice = highs.slice(i - window, i + window + 1)
+    const lowSlice = lows.slice(i - window, i + window + 1)
+    const high = highs[i]
+    const low = lows[i]
+    if (high === Math.max(...highSlice)) highsOut.push({ index: i, value: high })
+    if (low === Math.min(...lowSlice)) lowsOut.push({ index: i, value: low })
+  }
+  return { highs: highsOut, lows: lowsOut }
+}
+
+function clusterLevels(points, tolerancePct = 0.006, minTouches = 2) {
+  const clusters = []
+  points
+    .slice()
+    .sort((a, b) => a.value - b.value)
+    .forEach((point) => {
+      const existing = clusters.find((c) => Math.abs(point.value - c.value) / c.value <= tolerancePct)
+      if (existing) {
+        existing.total += point.value
+        existing.count += 1
+        existing.value = existing.total / existing.count
+      } else {
+        clusters.push({ value: point.value, total: point.value, count: 1 })
+      }
+    })
+  return clusters.filter((c) => c.count >= minTouches).sort((a, b) => b.count - a.count)
+}
+
+function detectDoubleTop(highs, lows) {
+  if (highs.length < 3) return null
+  const recent = highs.slice(-6)
+  for (let i = recent.length - 1; i >= 1; i -= 1) {
+    const top2 = recent[i]
+    const top1 = recent[i - 1]
+    if (!top1 || !top2) continue
+    const diff = Math.abs(top2.value - top1.value) / top1.value
+    if (diff > 0.012) continue
+    if (top2.index - top1.index < 4) continue
+    const valley = Math.min(...lows.slice(top1.index, top2.index + 1))
+    if (valley < top1.value * 0.97) {
+      return { index: top2.index }
+    }
+  }
+  return null
+}
+
+function detectDoubleBottom(lows, highs) {
+  if (lows.length < 3) return null
+  const recent = lows.slice(-6)
+  for (let i = recent.length - 1; i >= 1; i -= 1) {
+    const low2 = recent[i]
+    const low1 = recent[i - 1]
+    if (!low1 || !low2) continue
+    const diff = Math.abs(low2.value - low1.value) / low1.value
+    if (diff > 0.012) continue
+    if (low2.index - low1.index < 4) continue
+    const peak = Math.max(...highs.slice(low1.index, low2.index + 1))
+    if (peak > low1.value * 1.03) {
+      return { index: low2.index }
+    }
+  }
+  return null
+}
+
+function detectHeadShoulders(highs, lows) {
+  if (highs.length < 5) return null
+  const recent = highs.slice(-7)
+  for (let i = 0; i < recent.length - 2; i += 1) {
+    const left = recent[i]
+    const head = recent[i + 1]
+    const right = recent[i + 2]
+    if (!left || !head || !right) continue
+    if (head.value <= left.value || head.value <= right.value) continue
+    const shoulderDiff = Math.abs(left.value - right.value) / left.value
+    if (shoulderDiff > 0.03) continue
+    const valley1Idx = findExtremeIndex(lows, left.index, head.index, 'min')
+    const valley2Idx = findExtremeIndex(lows, head.index, right.index, 'min')
+    if (valley1Idx == null || valley2Idx == null) continue
+    return { headIndex: head.index, neckline: [valley1Idx, valley2Idx] }
+  }
+  return null
+}
+
+function detectInverseHeadShoulders(lows, highs) {
+  if (lows.length < 5) return null
+  const recent = lows.slice(-7)
+  for (let i = 0; i < recent.length - 2; i += 1) {
+    const left = recent[i]
+    const head = recent[i + 1]
+    const right = recent[i + 2]
+    if (!left || !head || !right) continue
+    if (head.value >= left.value || head.value >= right.value) continue
+    const shoulderDiff = Math.abs(left.value - right.value) / left.value
+    if (shoulderDiff > 0.03) continue
+    const peak1Idx = findExtremeIndex(highs, left.index, head.index, 'max')
+    const peak2Idx = findExtremeIndex(highs, head.index, right.index, 'max')
+    if (peak1Idx == null || peak2Idx == null) continue
+    return { headIndex: head.index, neckline: [peak1Idx, peak2Idx] }
+  }
+  return null
+}
+
+function findExtremeIndex(values, start, end, mode) {
+  if (end <= start) return null
+  const slice = values.slice(start, end + 1)
+  if (!slice.length) return null
+  const extreme = mode === 'min' ? Math.min(...slice) : Math.max(...slice)
+  const idx = slice.indexOf(extreme)
+  return idx >= 0 ? start + idx : null
+}
+
+function detectFlag(candles) {
+  if (candles.length < 30) return null
+  const start = candles.length - 30
+  const end = candles.length - 1
+  const startClose = candles[start].close
+  const endClose = candles[end].close
+  if (!startClose || !endClose) return null
+  const move = (endClose - startClose) / startClose
+  const recent = candles.slice(end - 10, end + 1)
+  const recentHigh = Math.max(...recent.map((c) => c.high ?? c.close))
+  const recentLow = Math.min(...recent.map((c) => c.low ?? c.close))
+  const recentRange = (recentHigh - recentLow) / startClose
+  if (Math.abs(move) > 0.08 && recentRange < Math.abs(move) * 0.35) {
+    return { type: move > 0 ? 'bull' : 'bear' }
+  }
+  return null
+}
+
+function detectTriangle(pivots, candles) {
+  const window = 25
+  if (candles.length < window) return null
+  const start = candles.length - window
+  const highs = pivots.highs.filter((p) => p.index >= start)
+  const lows = pivots.lows.filter((p) => p.index >= start)
+  if (highs.length < 2 || lows.length < 2) return null
+  const firstHigh = highs[0]
+  const lastHigh = highs[highs.length - 1]
+  const firstLow = lows[0]
+  const lastLow = lows[lows.length - 1]
+  const highSlope = (lastHigh.value - firstHigh.value) / Math.max(1, lastHigh.index - firstHigh.index)
+  const lowSlope = (lastLow.value - firstLow.value) / Math.max(1, lastLow.index - firstLow.index)
+  const avg = (firstHigh.value + firstLow.value) / 2
+  if (Math.abs(highSlope) / avg < 0.0005 && lowSlope / avg > 0.0007) {
+    return 'Ascending Triangle'
+  }
+  if (Math.abs(lowSlope) / avg < 0.0005 && highSlope / avg < -0.0007) {
+    return 'Descending Triangle'
+  }
+  return null
+}
+
+function detectBreakout(closes, levels) {
+  if (!levels?.length || closes.length < 2) return null
+  const last = closes[closes.length - 1]
+  const tol = last * 0.004
+  const resistances = levels.filter((l) => l.kind === 'resistance').map((l) => l.value)
+  const supports = levels.filter((l) => l.kind === 'support').map((l) => l.value)
+  if (resistances.length) {
+    const top = Math.max(...resistances)
+    if (last > top + tol) return { type: 'up' }
+  }
+  if (supports.length) {
+    const bottom = Math.min(...supports)
+    if (last < bottom - tol) return { type: 'down' }
+  }
+  return null
+}
+
+function getBarSpacing(period, intervalOverride) {
+  const baseInterval = TIMEFRAMES.find((item) => item.value === period)?.interval || '1d'
+  const interval = intervalOverride || baseInterval
+  if (interval === '1mo' || interval === '3mo') return 10
+  if (interval === '1wk') return 8
+  if (interval === '1d') {
+    if (period === '5Y' || period === 'MAX') return 4
+    if (period === '1Y' || period === '6M' || period === 'YTD') return 7
+    return 6
+  }
+  if (interval === '1h' || interval === '30m') return 4
+  return 5
+}
+
+function formatScreenerCell(column, value) {
+  if (value === null || value === undefined || value === '') return '—'
+  if (typeof value === 'number' && !Number.isFinite(value)) return '—'
+  if (column.type === 'text') return value
+  if (column.type === 'percent') return formatPercent(value)
+  if (column.type === 'money') return formatLargeNumber(value)
+  return formatNumber(value)
+}
+
 function formatNumber(value) {
   if (typeof value !== 'number' || Number.isNaN(value)) return value ?? 'N/A'
   return value.toFixed(2)
@@ -1503,10 +2310,12 @@ function formatNumber(value) {
 
 function formatLargeNumber(value) {
   if (typeof value !== 'number') return value || 'N/A'
-  if (value >= 1e12) return `${(value / 1e12).toFixed(1)}T`
-  if (value >= 1e9) return `${(value / 1e9).toFixed(1)}B`
-  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`
-  return `${(value / 1e3).toFixed(1)}K`
+  const sign = value < 0 ? '-' : ''
+  const abs = Math.abs(value)
+  if (abs >= 1e12) return `${sign}${(abs / 1e12).toFixed(1)}T`
+  if (abs >= 1e9) return `${sign}${(abs / 1e9).toFixed(1)}B`
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(1)}M`
+  return `${sign}${(abs / 1e3).toFixed(1)}K`
 }
 
 function formatPercent(value) {
@@ -1516,10 +2325,25 @@ function formatPercent(value) {
 }
 
 function formatScreenerValue(metric, value) {
-  if (metric === 'profitMargin' || metric === 'returnOnEquity' || metric === 'returnOnAssets' || metric === 'fcfYield') {
+  if (
+    metric === 'profitMargin' ||
+    metric === 'returnOnEquity' ||
+    metric === 'returnOnAssets' ||
+    metric === 'fcfYield' ||
+    metric === 'fcfMargin' ||
+    metric === 'operatingMargin' ||
+    metric === 'fcfConversion' ||
+    metric === 'fcfConversionEbit'
+  ) {
     return formatPercent(value)
   }
-  if (metric === 'marketCap' || metric === 'freeCashflow' || metric === 'operatingCashflow' || metric === 'totalRevenue') {
+  if (
+    metric === 'marketCap' ||
+    metric === 'freeCashflow' ||
+    metric === 'operatingCashflow' ||
+    metric === 'totalRevenue' ||
+    metric === 'capitalExpenditures'
+  ) {
     return formatLargeNumber(value)
   }
   return formatNumber(value)

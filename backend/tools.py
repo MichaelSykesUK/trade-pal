@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import yfinance as yf
+import requests
 from yfinance import shared as yf_shared
 from yfinance.exceptions import YFRateLimitError
 from datetime import datetime, timedelta
@@ -24,6 +25,8 @@ SP500_CACHE_TTL = 21600  # 6 hours
 SP500_FETCH_CHUNK = 4
 SP500_CACHE_PATH = Path(__file__).resolve().parent / "output" / "sp500_cache.json"
 SP500_UNIVERSE_PATH = Path(__file__).resolve().parent / "data" / "sp500.csv"
+SP500_UNIVERSE_CACHE_PATH = Path(__file__).resolve().parent / "output" / "sp500_universe.json"
+SP500_UNIVERSE_TTL = 86400  # 24 hours
 DEFAULT_SP500 = [
     "AAPL", "MSFT", "AMZN", "GOOGL", "GOOG", "META", "NVDA", "BRK-B", "TSLA",
     "JPM", "V", "JNJ", "UNH", "XOM", "PG", "MA", "LLY", "AVGO", "HD", "COST",
@@ -131,10 +134,19 @@ def _normalize_interval(interval: str | None) -> str | None:
         return None
     return interval.lower().strip()
 
+def _cooldown_active() -> bool:
+    return time.time() < _YF_COOLDOWN_UNTIL
+
 
 def _start_yf_cooldown(seconds: float = _YF_COOLDOWN_SECONDS):
     global _YF_COOLDOWN_UNTIL
     _YF_COOLDOWN_UNTIL = max(_YF_COOLDOWN_UNTIL, time.time() + seconds)
+
+
+def _cooldown_remaining_seconds() -> int:
+    if not _cooldown_active():
+        return 0
+    return max(0, int(_YF_COOLDOWN_UNTIL - time.time()))
 
 
 def get_extended_period(user_period: str, interval: str | None = None) -> str:
@@ -277,6 +289,9 @@ def _get_ticker_info(ticker: str) -> dict:
     def _load_info():
         return yf.Ticker(ticker).info or {}
 
+    if _cooldown_active():
+        cached = _cache_get(INFO_CACHE, cache_key, INFO_CACHE_TTL)
+        return cached or {}
     try:
         info = _singleflight_run(("info", ticker), _throttled_call, _load_info)
     except YFRateLimitError:
@@ -353,7 +368,7 @@ def _indicators_from_df(data: pd.DataFrame) -> dict:
 def _throttled_call(fn, *args, **kwargs):
     global _LAST_YF_CALL
     with _YF_LOCK:
-        if time.time() < _YF_COOLDOWN_UNTIL:
+        if _cooldown_active():
             raise YFRateLimitError("Yahoo Finance cooldown active.")
         wait = _MIN_CALL_INTERVAL - (time.time() - _LAST_YF_CALL)
         if wait > 0:
@@ -367,11 +382,14 @@ def _throttled_call(fn, *args, **kwargs):
 def _download_prices(*args, retries: int = 5, **kwargs):
     backoff = 1.5
     last_err: Exception | None = None
-    if time.time() < _YF_COOLDOWN_UNTIL:
+    if _cooldown_active():
         raise YFRateLimitError("Yahoo Finance cooldown active.")
     for attempt in range(retries):
         try:
             data = _singleflight_run(("yf.download", args, kwargs), _throttled_call, yf.download, *args, **kwargs)
+        except YFRateLimitError as exc:
+            last_err = exc
+            _start_yf_cooldown()
         except Exception as exc:
             last_err = exc
         else:
@@ -555,13 +573,28 @@ def get_kpi_data(ticker: str, history: pd.DataFrame | None = None):
             avg_volume = _safe_price(hist_52w["Volume"].mean())
 
     forward_pe = info.get("forwardPE", "N/A")
-    market_cap = info.get("marketCap", "N/A")
+    current_price = info.get("currentPrice") or info.get("regularMarketPrice") or previous_close or open_price
+    shares_outstanding = info.get("sharesOutstanding", None)
+    market_cap = info.get("marketCap", None)
+    if market_cap is None and isinstance(current_price, (int, float)) and isinstance(shares_outstanding, (int, float)):
+        market_cap = current_price * shares_outstanding
     free_cash_flow = info.get("freeCashflow", None)
     operating_cash_flow = info.get("operatingCashflow", None)
     total_cash = info.get("totalCash", None)
     total_debt = info.get("totalDebt", None)
     total_revenue = info.get("totalRevenue", None)
     ebitda = info.get("ebitda", None)
+    ebit = info.get("ebit") or info.get("operatingIncome", None)
+    interest_expense = info.get("interestExpense", None)
+    interest_paid = info.get("interestPaid", None)
+    net_income = info.get("netIncomeToCommon", None) or info.get("netIncome", None)
+    capex = info.get("capitalExpenditures", None)
+    preferred_equity = info.get("preferredStock", None) or info.get("preferredStockAndOtherAdjustments", None)
+    minority_interest = info.get("minorityInterest", None)
+    enterprise_value = info.get("enterpriseValue", None)
+    price_to_sales = info.get("priceToSalesTrailing12Months", None) or info.get("priceToSales", None)
+    price_to_book = info.get("priceToBook", None)
+    peg_ratio = info.get("pegRatio", None)
     gross_margin = info.get("grossMargins", None)
     operating_margin = info.get("operatingMargins", None)
     profit_margin = info.get("profitMargins", None)
@@ -572,9 +605,62 @@ def get_kpi_data(ticker: str, history: pd.DataFrame | None = None):
     debt_to_equity = None
     if isinstance(total_debt, (int, float)) and isinstance(equity, (int, float)) and equity:
         debt_to_equity = total_debt / equity
+    capex_abs = None
+    if isinstance(capex, (int, float)):
+        capex_abs = abs(capex)
+    if free_cash_flow is None and isinstance(operating_cash_flow, (int, float)) and isinstance(capex_abs, (int, float)):
+        free_cash_flow = operating_cash_flow - capex_abs
     fcf_yield = None
     if isinstance(free_cash_flow, (int, float)) and isinstance(market_cap, (int, float)) and market_cap:
         fcf_yield = free_cash_flow / market_cap
+    fcf_margin = None
+    if isinstance(free_cash_flow, (int, float)) and isinstance(total_revenue, (int, float)) and total_revenue:
+        fcf_margin = free_cash_flow / total_revenue
+    capex_to_revenue = None
+    if isinstance(capex, (int, float)) and isinstance(total_revenue, (int, float)) and total_revenue:
+        capex_to_revenue = capex / total_revenue
+    fcf_to_capex = None
+    if isinstance(free_cash_flow, (int, float)) and isinstance(capex_abs, (int, float)) and capex_abs:
+        fcf_to_capex = free_cash_flow / capex_abs
+    net_debt = None
+    if isinstance(total_debt, (int, float)) and isinstance(total_cash, (int, float)):
+        net_debt = total_debt - total_cash
+    if enterprise_value is None:
+        if isinstance(market_cap, (int, float)) and isinstance(total_debt, (int, float)):
+            cash_component = total_cash if isinstance(total_cash, (int, float)) else 0
+            pref_component = preferred_equity if isinstance(preferred_equity, (int, float)) else 0
+            minority_component = minority_interest if isinstance(minority_interest, (int, float)) else 0
+            enterprise_value = market_cap + total_debt + pref_component + minority_component - cash_component
+    ev_to_ebitda = info.get("enterpriseToEbitda", None)
+    if ev_to_ebitda is None and isinstance(enterprise_value, (int, float)) and isinstance(ebitda, (int, float)) and ebitda:
+        ev_to_ebitda = enterprise_value / ebitda
+    net_debt_to_ebitda = None
+    if isinstance(net_debt, (int, float)) and isinstance(ebitda, (int, float)) and ebitda:
+        net_debt_to_ebitda = net_debt / ebitda
+    fcf_per_share = None
+    if isinstance(free_cash_flow, (int, float)) and isinstance(shares_outstanding, (int, float)) and shares_outstanding:
+        fcf_per_share = free_cash_flow / shares_outstanding
+    p_to_fcf = None
+    if isinstance(free_cash_flow, (int, float)) and free_cash_flow > 0 and isinstance(market_cap, (int, float)):
+        p_to_fcf = market_cap / free_cash_flow
+    p_to_fcf_per_share = None
+    if isinstance(fcf_per_share, (int, float)) and fcf_per_share > 0 and isinstance(current_price, (int, float)):
+        p_to_fcf_per_share = current_price / fcf_per_share
+    ev_to_fcf = None
+    if isinstance(free_cash_flow, (int, float)) and free_cash_flow > 0 and isinstance(enterprise_value, (int, float)):
+        ev_to_fcf = enterprise_value / free_cash_flow
+    interest_coverage_ebit = None
+    if isinstance(ebit, (int, float)) and isinstance(interest_expense, (int, float)) and interest_expense:
+        interest_coverage_ebit = ebit / abs(interest_expense)
+    interest_coverage_cash = None
+    if isinstance(operating_cash_flow, (int, float)) and isinstance(interest_paid, (int, float)) and interest_paid:
+        interest_coverage_cash = operating_cash_flow / abs(interest_paid)
+    fcf_conversion = None
+    if isinstance(free_cash_flow, (int, float)) and isinstance(net_income, (int, float)) and net_income:
+        fcf_conversion = free_cash_flow / net_income
+    fcf_conversion_ebit = None
+    if isinstance(free_cash_flow, (int, float)) and isinstance(ebit, (int, float)) and ebit:
+        fcf_conversion_ebit = free_cash_flow / ebit
     earnings_ts = info.get("earningsTimestamp", None)
     if earnings_ts:
         try:
@@ -595,6 +681,7 @@ def get_kpi_data(ticker: str, history: pd.DataFrame | None = None):
         "weekHigh52": week_high_52,
         "weekLow52": week_low_52,
         "marketCap": market_cap,
+        "sharesOutstanding": shares_outstanding,
         "beta": info.get("beta", "N/A"),
         "eps": info.get("trailingEps", "N/A"),
         "dividend": info.get("dividendRate", "N/A"),
@@ -611,6 +698,12 @@ def get_kpi_data(ticker: str, history: pd.DataFrame | None = None):
         "debtToEquity": debt_to_equity,
         "totalRevenue": total_revenue,
         "ebitda": ebitda,
+        "capitalExpenditures": capex,
+        "enterpriseValue": enterprise_value,
+        "evToEbitda": ev_to_ebitda,
+        "priceToSales": price_to_sales,
+        "priceToBook": price_to_book,
+        "pegRatio": peg_ratio,
         "grossMargin": gross_margin,
         "operatingMargin": operating_margin,
         "profitMargin": profit_margin,
@@ -618,6 +711,19 @@ def get_kpi_data(ticker: str, history: pd.DataFrame | None = None):
         "returnOnAssets": roa,
         "currentRatio": current_ratio,
         "fcfYield": fcf_yield,
+        "fcfMargin": fcf_margin,
+        "capexToRevenue": capex_to_revenue,
+        "fcfToCapex": fcf_to_capex,
+        "netDebt": net_debt,
+        "netDebtToEbitda": net_debt_to_ebitda,
+        "fcfPerShare": fcf_per_share,
+        "priceToFcf": p_to_fcf,
+        "priceToFcfPerShare": p_to_fcf_per_share,
+        "evToFcf": ev_to_fcf,
+        "interestCoverageEbit": interest_coverage_ebit,
+        "interestCoverageCash": interest_coverage_cash,
+        "fcfConversion": fcf_conversion,
+        "fcfConversionEbit": fcf_conversion_ebit,
     }
     _cache_set(KPI_CACHE, cache_key, kpi)
     return kpi
@@ -808,6 +914,16 @@ def get_watchlist_batch(tickers: list[str]) -> dict:
     if not clean:
         return {}
 
+    if _cooldown_active():
+        results = {}
+        for t in clean:
+            cached = WATCHLIST_CACHE.get(t)
+            if cached:
+                results[t] = cached[1]
+            else:
+                results[t] = _default_watchlist_payload()
+        return results
+
     now = time.time()
     results: dict[str, dict] = {}
     missing: list[str] = []
@@ -828,6 +944,7 @@ def get_watchlist_batch(tickers: list[str]) -> dict:
         try:
             chunk_payload = _download_watchlist_chunk(chunk)
         except (YFRateLimitError, ValueError):
+            _start_yf_cooldown()
             chunk_payload = {}
             for ticker in chunk:
                 cached_entry = WATCHLIST_CACHE.get(ticker)
@@ -846,6 +963,8 @@ def get_watchlist_batch(tickers: list[str]) -> dict:
                     pass
             results[ticker] = payload
             WATCHLIST_CACHE[ticker] = (time.time(), payload)
+        if _cooldown_active():
+            break
         time.sleep(2.5)
 
     for t in clean:
@@ -867,6 +986,7 @@ def _download_watchlist_chunk(tickers: list[str]) -> dict[str, dict]:
             threads=False,
         )
     except (YFRateLimitError, ValueError):
+        _start_yf_cooldown()
         fallback = {}
         for t in tickers:
             name, exchange = _info_snapshot_for_watchlist(t)
@@ -922,7 +1042,76 @@ def download_prices(tickers, period: str, interval: str, **kwargs):
     return _download_prices(tickers, period=period, interval=interval, **kwargs)
 
 
-def _load_sp500_universe() -> list[str]:
+def _load_sp500_universe_cache() -> list[str] | None:
+    if SP500_UNIVERSE_CACHE_PATH.exists():
+        try:
+            payload = json.loads(SP500_UNIVERSE_CACHE_PATH.read_text())
+            ts = float(payload.get("ts", 0))
+            tickers = payload.get("tickers") or []
+            if tickers and time.time() - ts < SP500_UNIVERSE_TTL:
+                return [t.upper() for t in tickers if t]
+        except Exception:
+            pass
+    return None
+
+
+def _save_sp500_universe_cache(tickers: list[str]):
+    try:
+        SP500_UNIVERSE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SP500_UNIVERSE_CACHE_PATH.write_text(json.dumps({"ts": time.time(), "tickers": tickers}))
+    except Exception:
+        pass
+
+
+def _parse_sp500_from_wikipedia() -> list[str]:
+    resp = requests.get(
+        "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    tables = pd.read_html(resp.text)
+    for table in tables:
+        cols = [c.lower() for c in table.columns]
+        symbol_col = None
+        for idx, col in enumerate(cols):
+            if "symbol" in col:
+                symbol_col = table.columns[idx]
+                break
+        if symbol_col is None:
+            continue
+        tickers = [str(t).strip().upper().replace(".", "-") for t in table[symbol_col].tolist()]
+        tickers = [t for t in tickers if t]
+        if tickers:
+            return tickers
+    return []
+
+
+def _load_sp500_universe(force_refresh: bool = False) -> list[str]:
+    if not force_refresh:
+        cached = _load_sp500_universe_cache()
+        if cached:
+            return cached
+    try:
+        tickers = _parse_sp500_from_wikipedia()
+        if tickers:
+            _save_sp500_universe_cache(tickers)
+            SP500_UNIVERSE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            SP500_UNIVERSE_PATH.write_text("ticker\n" + "\n".join(tickers))
+            return tickers
+    except Exception:
+        pass
+    try:
+        tickers = yf.tickers_sp500()
+        if isinstance(tickers, (list, tuple)) and tickers:
+            cleaned = [t.strip().upper().replace(".", "-") for t in tickers if t and t.strip()]
+            if cleaned:
+                _save_sp500_universe_cache(cleaned)
+                SP500_UNIVERSE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                SP500_UNIVERSE_PATH.write_text("ticker\n" + "\n".join(cleaned))
+                return cleaned
+    except Exception:
+        pass
     if SP500_UNIVERSE_PATH.exists():
         try:
             rows = SP500_UNIVERSE_PATH.read_text().splitlines()
@@ -960,7 +1149,11 @@ def _save_sp500_cache(cache: dict):
 
 
 def _extract_investor_metrics(info: dict) -> dict:
+    current_price = info.get("currentPrice") or info.get("regularMarketPrice")
+    shares_outstanding = info.get("sharesOutstanding")
     market_cap = info.get("marketCap")
+    if market_cap is None and isinstance(current_price, (int, float)) and isinstance(shares_outstanding, (int, float)):
+        market_cap = current_price * shares_outstanding
     free_cf = info.get("freeCashflow")
     op_cf = info.get("operatingCashflow")
     total_cash = info.get("totalCash")
@@ -968,6 +1161,17 @@ def _extract_investor_metrics(info: dict) -> dict:
     equity = info.get("totalStockholderEquity")
     revenue = info.get("totalRevenue")
     ebitda = info.get("ebitda")
+    ebit = info.get("ebit") or info.get("operatingIncome")
+    interest_expense = info.get("interestExpense")
+    interest_paid = info.get("interestPaid")
+    net_income = info.get("netIncomeToCommon") or info.get("netIncome")
+    capex = info.get("capitalExpenditures")
+    preferred_equity = info.get("preferredStock") or info.get("preferredStockAndOtherAdjustments")
+    minority_interest = info.get("minorityInterest")
+    enterprise_value = info.get("enterpriseValue")
+    price_to_sales = info.get("priceToSalesTrailing12Months") or info.get("priceToSales")
+    price_to_book = info.get("priceToBook")
+    peg_ratio = info.get("pegRatio")
     gross_margin = info.get("grossMargins")
     operating_margin = info.get("operatingMargins")
     profit_margin = info.get("profitMargins")
@@ -977,15 +1181,69 @@ def _extract_investor_metrics(info: dict) -> dict:
     debt_to_equity = None
     if isinstance(total_debt, (int, float)) and isinstance(equity, (int, float)) and equity:
         debt_to_equity = total_debt / equity
+    capex_abs = None
+    if isinstance(capex, (int, float)):
+        capex_abs = abs(capex)
+    if free_cf is None and isinstance(op_cf, (int, float)) and isinstance(capex_abs, (int, float)):
+        free_cf = op_cf - capex_abs
     fcf_yield = None
     if isinstance(free_cf, (int, float)) and isinstance(market_cap, (int, float)) and market_cap:
         fcf_yield = free_cf / market_cap
+    fcf_margin = None
+    if isinstance(free_cf, (int, float)) and isinstance(revenue, (int, float)) and revenue:
+        fcf_margin = free_cf / revenue
+    capex_to_revenue = None
+    if isinstance(capex, (int, float)) and isinstance(revenue, (int, float)) and revenue:
+        capex_to_revenue = capex / revenue
+    fcf_to_capex = None
+    if isinstance(free_cf, (int, float)) and isinstance(capex_abs, (int, float)) and capex_abs:
+        fcf_to_capex = free_cf / capex_abs
+    net_debt = None
+    if isinstance(total_debt, (int, float)) and isinstance(total_cash, (int, float)):
+        net_debt = total_debt - total_cash
+    if enterprise_value is None:
+        if isinstance(market_cap, (int, float)) and isinstance(total_debt, (int, float)):
+            cash_component = total_cash if isinstance(total_cash, (int, float)) else 0
+            pref_component = preferred_equity if isinstance(preferred_equity, (int, float)) else 0
+            minority_component = minority_interest if isinstance(minority_interest, (int, float)) else 0
+            enterprise_value = market_cap + total_debt + pref_component + minority_component - cash_component
+    ev_to_ebitda = info.get("enterpriseToEbitda")
+    if ev_to_ebitda is None and isinstance(enterprise_value, (int, float)) and isinstance(ebitda, (int, float)) and ebitda:
+        ev_to_ebitda = enterprise_value / ebitda
+    net_debt_to_ebitda = None
+    if isinstance(net_debt, (int, float)) and isinstance(ebitda, (int, float)) and ebitda:
+        net_debt_to_ebitda = net_debt / ebitda
+    fcf_per_share = None
+    if isinstance(free_cf, (int, float)) and isinstance(shares_outstanding, (int, float)) and shares_outstanding:
+        fcf_per_share = free_cf / shares_outstanding
+    p_to_fcf = None
+    if isinstance(free_cf, (int, float)) and free_cf > 0 and isinstance(market_cap, (int, float)):
+        p_to_fcf = market_cap / free_cf
+    p_to_fcf_per_share = None
+    if isinstance(fcf_per_share, (int, float)) and fcf_per_share > 0 and isinstance(current_price, (int, float)):
+        p_to_fcf_per_share = current_price / fcf_per_share
+    ev_to_fcf = None
+    if isinstance(free_cf, (int, float)) and free_cf > 0 and isinstance(enterprise_value, (int, float)):
+        ev_to_fcf = enterprise_value / free_cf
+    interest_coverage_ebit = None
+    if isinstance(ebit, (int, float)) and isinstance(interest_expense, (int, float)) and interest_expense:
+        interest_coverage_ebit = ebit / abs(interest_expense)
+    interest_coverage_cash = None
+    if isinstance(op_cf, (int, float)) and isinstance(interest_paid, (int, float)) and interest_paid:
+        interest_coverage_cash = op_cf / abs(interest_paid)
+    fcf_conversion = None
+    if isinstance(free_cf, (int, float)) and isinstance(net_income, (int, float)) and net_income:
+        fcf_conversion = free_cf / net_income
+    fcf_conversion_ebit = None
+    if isinstance(free_cf, (int, float)) and isinstance(ebit, (int, float)) and ebit:
+        fcf_conversion_ebit = free_cf / ebit
     return {
         "companyName": info.get("shortName") or info.get("longName") or info.get("displayName") or "Unknown",
         "exchange": info.get("exchange") or info.get("fullExchangeName") or "",
         "sector": info.get("sector") or "",
         "industry": info.get("industry") or "",
         "marketCap": market_cap,
+        "sharesOutstanding": shares_outstanding,
         "freeCashflow": free_cf,
         "operatingCashflow": op_cf,
         "totalCash": total_cash,
@@ -993,6 +1251,12 @@ def _extract_investor_metrics(info: dict) -> dict:
         "debtToEquity": debt_to_equity,
         "totalRevenue": revenue,
         "ebitda": ebitda,
+        "capitalExpenditures": capex,
+        "enterpriseValue": enterprise_value,
+        "evToEbitda": ev_to_ebitda,
+        "priceToSales": price_to_sales,
+        "priceToBook": price_to_book,
+        "pegRatio": peg_ratio,
         "grossMargin": gross_margin,
         "operatingMargin": operating_margin,
         "profitMargin": profit_margin,
@@ -1000,31 +1264,48 @@ def _extract_investor_metrics(info: dict) -> dict:
         "returnOnAssets": roa,
         "currentRatio": current_ratio,
         "fcfYield": fcf_yield,
+        "fcfMargin": fcf_margin,
+        "capexToRevenue": capex_to_revenue,
+        "fcfToCapex": fcf_to_capex,
+        "netDebt": net_debt,
+        "netDebtToEbitda": net_debt_to_ebitda,
+        "fcfPerShare": fcf_per_share,
+        "priceToFcf": p_to_fcf,
+        "priceToFcfPerShare": p_to_fcf_per_share,
+        "evToFcf": ev_to_fcf,
+        "interestCoverageEbit": interest_coverage_ebit,
+        "interestCoverageCash": interest_coverage_cash,
+        "fcfConversion": fcf_conversion,
+        "fcfConversionEbit": fcf_conversion_ebit,
         "trailingPE": info.get("trailingPE"),
         "forwardPE": info.get("forwardPE"),
-        "priceToBook": info.get("priceToBook"),
     }
 
 
 def get_sp500_screener(metric: str = "freeCashflow", order: str = "desc", limit: int = 20, refresh: bool = False) -> dict:
     metric = (metric or "freeCashflow").strip()
     order = (order or "desc").lower()
-    limit = max(5, min(int(limit or 20), 100))
+    raw_limit = int(limit or 50)
+    if raw_limit <= 0:
+        limit = 0
+    else:
+        limit = max(20, min(raw_limit, 200))
 
-    universe = _load_sp500_universe()
+    universe = _load_sp500_universe(force_refresh=refresh)
     cache = _load_sp500_cache()
     data = cache.get("data") or {}
     if refresh:
         cache["ts"] = 0
 
     missing = [t for t in universe if t not in data]
-    fetch_count = min(len(missing), SP500_FETCH_CHUNK)
-    for ticker in missing[:fetch_count]:
-        try:
-            info = _get_ticker_info(ticker)
-            data[ticker] = _extract_investor_metrics(info)
-        except Exception:
-            data[ticker] = _extract_investor_metrics({})
+    if not _cooldown_active():
+        fetch_count = min(len(missing), SP500_FETCH_CHUNK)
+        for ticker in missing[:fetch_count]:
+            try:
+                info = _get_ticker_info(ticker)
+                data[ticker] = _extract_investor_metrics(info)
+            except Exception:
+                data[ticker] = _extract_investor_metrics({})
 
     cache["data"] = data
     cache["ts"] = time.time()
@@ -1033,8 +1314,6 @@ def get_sp500_screener(metric: str = "freeCashflow", order: str = "desc", limit:
     rows = []
     for ticker, metrics in data.items():
         value = metrics.get(metric)
-        if value is None:
-            continue
         rows.append({
             "ticker": ticker,
             "metricValue": value,
@@ -1042,7 +1321,8 @@ def get_sp500_screener(metric: str = "freeCashflow", order: str = "desc", limit:
         })
 
     rows.sort(key=lambda r: (r["metricValue"] is None, r["metricValue"]), reverse=(order != "asc"))
-    rows = rows[:limit]
+    if limit:
+        rows = rows[:limit]
 
     remaining = max(len(universe) - len(data), 0)
     return {
@@ -1053,4 +1333,6 @@ def get_sp500_screener(metric: str = "freeCashflow", order: str = "desc", limit:
         "complete": remaining == 0,
         "remaining": remaining,
         "universeSize": len(universe),
+        "cooldown": _cooldown_active(),
+        "cooldownSeconds": _cooldown_remaining_seconds(),
     }

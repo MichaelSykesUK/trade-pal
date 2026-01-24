@@ -86,6 +86,18 @@ The frontend talks to the backend through REST calls; keep both processes runnin
 - The UI is implemented entirely in React (Vite); Lightweight Charts powers the charting components.
 - ML model predictions support ARIMA, XGBoost, RandomForest, etc.
 
+## 🧰 Screener Cache Warm-up
+To prefill the S&P 500 screener cache (useful for large table views), run:
+```bash
+python backend/scripts/warm_sp500_cache.py --refresh
+```
+This loops through the universe gradually to avoid Yahoo rate limits.
+
+## 📌 S&P 500 Universe Source
+The backend attempts to fetch the live S&P 500 list from Wikipedia and caches
+it for 24 hours. If that fails, it falls back to Yahoo’s `tickers_sp500()` or
+the cached CSV under `backend/data/sp500.csv`.
+
 ## 📌 Updating Dependencies
 If you add new Python packages:
 
