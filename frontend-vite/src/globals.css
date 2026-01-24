@@ -11,6 +11,7 @@
 [data-theme='dark'] #topRibbon,
 [data-theme='dark'] .watchlist-box,
 [data-theme='dark'] .market-box,
+[data-theme='dark'] .screener-box,
 [data-theme='dark'] #center-pane,
 [data-theme='dark'] .news-box {
   background-color: #182338;
@@ -451,6 +452,11 @@ body {
   flex-wrap: wrap;
   gap: 6px;
 }
+.interval-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 
 .panel-subtitle {
   color: #6b7280;
@@ -659,7 +665,8 @@ body {
 
 /* Left Pane */
 .watchlist-box,
-.market-box {
+.market-box,
+.screener-box {
   border: 1px solid #ccc;
   border-radius: 6px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -668,7 +675,8 @@ body {
   background-color: #fff;
 }
 .watchlist-box h2,
-.market-box h2 {
+.market-box h2,
+.screener-box h2 {
   font-size: 14px;
   margin: 0 0 8px 0;
 }
@@ -695,6 +703,22 @@ body {
 }
 .item-header span:last-child {
   text-align: center;
+}
+
+.screener-controls {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+.screener-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+[data-theme='dark'] .screener-controls label {
+  color: #cbd5e1;
 }
 
 /* Buttons */

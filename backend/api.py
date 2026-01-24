@@ -6,7 +6,6 @@ import traceback
 from pathlib import Path
 
 import requests
-import yfinance as yf
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +20,9 @@ from backend.tools import (
     slice_indicator_data,
     get_extended_period,
     get_watchlist_batch,
+    get_stock_bundle,
+    download_prices,
+    get_sp500_screener,
 )
 from backend.ml import get_available_models, run_ml_model
 
@@ -38,6 +40,10 @@ app.add_middleware(
 
 # Global store for indicator data
 INDICATOR_DATA_STORE = {}
+NEWS_CACHE_TTL = 300
+NEWS_CACHE: dict[str, tuple[float, list]] = {}
+AUTOCOMPLETE_CACHE_TTL = 180
+AUTOCOMPLETE_CACHE: dict[str, tuple[float, dict]] = {}
 
 
 class WatchlistBatchRequest(BaseModel):
@@ -47,6 +53,11 @@ class WatchlistBatchRequest(BaseModel):
 @app.get("/autocomplete")
 def yahoo_autocomplete(q: str):
     try:
+        cache_key = (q or "").strip().lower()
+        cached = AUTOCOMPLETE_CACHE.get(cache_key)
+        if cached and time.time() - cached[0] < AUTOCOMPLETE_CACHE_TTL:
+            return cached[1]
+
         resp = requests.get(
             "https://query2.finance.yahoo.com/v1/finance/search",
             params={"q": q, "lang": "en-US", "region": "US", "quotesCount": 6, "newsCount": 0},
@@ -54,23 +65,36 @@ def yahoo_autocomplete(q: str):
             timeout=5,
         )
         resp.raise_for_status()
-        return resp.json()
+        payload = resp.json()
+        AUTOCOMPLETE_CACHE[cache_key] = (time.time(), payload)
+        return payload
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _fetch_news(ticker: str):
+    cache_key = (ticker or "").upper().strip()
+    cached = NEWS_CACHE.get(cache_key)
+    if cached and time.time() - cached[0] < NEWS_CACHE_TTL:
+        return cached[1]
+
+    resp = requests.get(
+        "https://query2.finance.yahoo.com/v1/finance/search",
+        params={"q": ticker, "lang": "en-US", "region": "US", "quotesCount": 0, "newsCount": 10},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=5,
+    )
+    resp.raise_for_status()
+    news = resp.json().get("news", [])
+    NEWS_CACHE[cache_key] = (time.time(), news)
+    return news
+
+
 @app.get("/news/{ticker}")
 def get_news(ticker: str):
     try:
-        resp = requests.get(
-            "https://query2.finance.yahoo.com/v1/finance/search",
-            params={"q": ticker, "lang": "en-US", "region": "US", "quotesCount": 0, "newsCount": 10},
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        return resp.json().get("news", [])
+        return _fetch_news(ticker)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -93,10 +117,6 @@ def stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
         try:
             # 1) get the sliced stock data
             data = get_stock_data(ticker, period, interval)
-
-            # 2) fetch & cache the full-range technical indicators
-            max_ind = get_technical_indicators(ticker, period="max", interval=interval)
-            INDICATOR_DATA_STORE[ticker] = max_ind
 
             return data
 
@@ -191,65 +211,16 @@ def watchlist_data(ticker: str):
     Fetch daily & YTD change + company name, with up to 3 retries on YF rate limits.
     Falls back to zeros if still failing.
     """
-    max_retries = 3
-    backoff = 0.5
+    try:
+        batch = get_watchlist_batch([ticker])
+        payload = batch.get(ticker)
+        if payload:
+            return payload
+    except YFRateLimitError:
+        pass
+    except Exception:
+        traceback.print_exc()
 
-    for attempt in range(max_retries):
-        try:
-            yf_data = yf.Ticker(ticker)
-
-            # 1) Get 7-day history
-            hist = yf_data.history(period="7d", interval="1d")
-            if hist is None or hist.empty or "Close" not in hist.columns:
-                raise ValueError("Empty or malformed historical data")
-
-            latest = hist.iloc[-1]
-            prev = hist.iloc[-2] if len(hist) > 1 else latest
-
-            current_price = float(latest["Close"])
-            prev_close = float(prev["Close"])
-            daily_change = current_price - prev_close
-            daily_pct = (daily_change / prev_close * 100) if prev_close else 0.0
-
-            ytd_price = float(hist.iloc[0]["Close"])
-            ytd_change = current_price - ytd_price
-            ytd_pct = (ytd_change / ytd_price * 100) if ytd_price else 0.0
-
-            # 2) Get company info (also with its own mini‐retry)
-            info = {}
-            for _ in range(max_retries):
-                try:
-                    info = yf_data.info or {}
-                    break
-                except YFRateLimitError:
-                    time.sleep(backoff)
-                    backoff *= 2
-
-            name = info.get("shortName") or info.get("longName") or "Unknown"
-
-            return {
-                "companyName": name,
-                "currentPrice": current_price,
-                "dailyChange": daily_change,
-                "dailyPct": daily_pct,
-                "ytdChange": ytd_change,
-                "ytdPct": ytd_pct,
-            }
-
-        except YFRateLimitError:
-            # exponential backoff on rate‐limit
-            if attempt < max_retries - 1:
-                time.sleep(backoff)
-                backoff *= 2
-                continue
-            # give up after retries
-            break
-
-        except Exception:
-            # any other error → give up
-            break
-
-    # fallback response if we never returned above
     return JSONResponse(
         status_code=200,
         content={
@@ -280,6 +251,52 @@ def watchlist_data_batch(payload: WatchlistBatchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/screener/sp500")
+def sp500_screener(metric: str = "freeCashflow", order: str = "desc", limit: int = 20, refresh: bool = False):
+    try:
+        return get_sp500_screener(metric=metric, order=order, limit=limit, refresh=refresh)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/bundle/{ticker}")
+def bundle_data(
+    ticker: str,
+    period: str = "1y",
+    interval: str = "1d",
+    include_news: bool = True,
+):
+    period = (period or "").lower().strip()
+    interval = (interval or "").lower().strip()
+
+    try:
+        bundle = get_stock_bundle(ticker, period, interval)
+    except YFRateLimitError:
+        raise HTTPException(
+            status_code=503,
+            detail="Yahoo Finance rate limit exceeded. Please try again later.",
+        )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    news_payload = []
+    if include_news:
+        try:
+            news_payload = _fetch_news(ticker)
+        except Exception:
+            cached = NEWS_CACHE.get((ticker or "").upper().strip())
+            news_payload = cached[1] if cached else []
+
+    return {
+        "stock": bundle.get("stock", {}),
+        "indicators": bundle.get("indicators", {}),
+        "kpi": bundle.get("kpi", {}),
+        "news": news_payload,
+    }
+
+
 @app.get("/ml/models")
 def ml_models():
     return get_available_models()
@@ -303,7 +320,7 @@ def ml_predictions(
     # Normalize inputs for yfinance
     period = (period or "").lower().strip()
     interval = (interval or "").lower().strip()
-    yf_period = get_extended_period(period)
+    yf_period = get_extended_period(period, interval)
 
     # Parse ARIMA order
     try:
@@ -311,20 +328,23 @@ def ml_predictions(
     except Exception:
         raise HTTPException(400, "Invalid arima_order; must be 'p,d,q'.")
 
-    # Quick check for historical data
-    tmp = yf.download(ticker, period=yf_period, interval=interval, progress=False)
-    if tmp.empty:
-        raise HTTPException(400, f"No historical data found for '{ticker}' over period '{period}'")
-
-    # Parse and validate feature flags
-    if not features:
-        raise HTTPException(400, "You must select at least one feature.")
-    try:
-        flags = json.loads(features)
-    except json.JSONDecodeError:
-        raise HTTPException(400, "Invalid JSON in 'features' parameter.")
-    if not any(flags.values()):
-        raise HTTPException(400, "You must select at least one feature.")
+    # Parse and validate feature flags (ARIMA doesn't require them)
+    flags = {}
+    if model != "ARIMA":
+        if not features:
+            raise HTTPException(400, "You must select at least one feature.")
+        try:
+            flags = json.loads(features)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "Invalid JSON in 'features' parameter.")
+        if not any(flags.values()):
+            raise HTTPException(400, "You must select at least one feature.")
+    else:
+        if features:
+            try:
+                flags = json.loads(features)
+            except json.JSONDecodeError:
+                flags = {}
 
     # Retry loop on Yahoo rate-limit
     max_retries = 3

@@ -20,6 +20,13 @@ const TIMEFRAMES = [
   { label: '5Y', value: '5Y', interval: '1wk' },
   { label: 'MAX', value: 'MAX', interval: '1mo' },
 ]
+const CANDLE_INTERVALS = [
+  { key: 'auto', label: 'Auto', value: null },
+  { key: '1d', label: '1D', value: '1d' },
+  { key: '1w', label: '1W', value: '1wk' },
+  { key: '1m', label: '1M', value: '1mo' },
+  { key: '3m', label: '3M', value: '3mo' },
+]
 
 const PRICE_OVERLAYS = [
   { key: 'MA50', label: 'MA(50)', color: '#eb4c34' },
@@ -71,17 +78,34 @@ const ML_FEATURES = [
 ]
 
 const ML_DAYS = [5, 20, 60, 120]
+const SCREENER_METRICS = [
+  { key: 'freeCashflow', label: 'Free Cash Flow' },
+  { key: 'fcfYield', label: 'FCF Yield' },
+  { key: 'operatingCashflow', label: 'Operating Cash Flow' },
+  { key: 'profitMargin', label: 'Profit Margin' },
+  { key: 'returnOnEquity', label: 'ROE' },
+  { key: 'debtToEquity', label: 'Debt / Equity' },
+  { key: 'marketCap', label: 'Market Cap' },
+]
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'
 
 export default function Home() {
   const [selectedTicker, setSelectedTicker] = useState(DEFAULT_TICKER)
   const [period, setPeriod] = useState('1Y')
   const [darkMode, setDarkMode] = useState(false)
+  const [intervalOverride, setIntervalOverride] = useState(null)
 
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST)
   const [snapshots, setSnapshots] = useState({})
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchError, setBatchError] = useState('')
+  const [screenerRows, setScreenerRows] = useState([])
+  const [screenerLoading, setScreenerLoading] = useState(false)
+  const [screenerError, setScreenerError] = useState('')
+  const [screenerMetric, setScreenerMetric] = useState('freeCashflow')
+  const [screenerRemaining, setScreenerRemaining] = useState(0)
+  const [screenerComplete, setScreenerComplete] = useState(false)
+  const [screenerRequested, setScreenerRequested] = useState(false)
 
   const [tickerData, setTickerData] = useState(null)
   const [indicators, setIndicators] = useState(null)
@@ -89,6 +113,11 @@ export default function Home() {
   const [news, setNews] = useState([])
   const [dataLoading, setDataLoading] = useState(false)
   const [dataError, setDataError] = useState('')
+  const [bundleReady, setBundleReady] = useState(false)
+  const tickerFetchRef = useRef(null)
+  const newsFetchRef = useRef(null)
+  const newsDelayRef = useRef(null)
+  const initialLoadRef = useRef(true)
 
   const [{ mlSeries, mlLoading, mlError }, setMlState] = useState({
     mlSeries: [],
@@ -97,48 +126,73 @@ export default function Home() {
   })
   const [mlModels, setMlModels] = useState([])
 
-  const interval = useMemo(
+  const baseInterval = useMemo(
     () => TIMEFRAMES.find((item) => item.value === period)?.interval || '1d',
     [period],
   )
+  const interval = intervalOverride || baseInterval
 
   const fetchTickerData = useCallback(
     async (ticker, frame) => {
       if (!ticker) return
+      if (tickerFetchRef.current) {
+        tickerFetchRef.current.abort()
+      }
+      if (newsFetchRef.current) {
+        newsFetchRef.current.abort()
+      }
+      if (newsDelayRef.current) {
+        clearTimeout(newsDelayRef.current)
+        newsDelayRef.current = null
+      }
+      const controller = new AbortController()
+      tickerFetchRef.current = controller
       setDataLoading(true)
       setDataError('')
       try {
-        const stockRes = await fetch(
-          `${API_BASE}/stock/${encodeURIComponent(ticker)}?period=${frame}&interval=${interval}`,
+        const resp = await fetch(
+          `${API_BASE}/bundle/${encodeURIComponent(ticker)}?period=${frame}&interval=${interval}&include_news=0`,
+          { signal: controller.signal },
         )
-        const stockJson = await stockRes.json().catch(() => ({}))
-        if (!stockRes.ok) {
-          throw new Error(stockJson.detail || stockRes.statusText)
+        const payload = await resp.json().catch(() => ({}))
+        if (!resp.ok) {
+          throw new Error(payload.detail || resp.statusText)
         }
-        setTickerData(transformStockResponse(stockJson))
-
-        // small pause to avoid bursting Yahoo
-        await new Promise((res) => setTimeout(res, 250))
-
-        const indRes = await fetch(
-          `${API_BASE}/indicators/${encodeURIComponent(ticker)}?period=${frame}&interval=${interval}`,
-        )
-        const indJson = await indRes.json().catch(() => ({}))
-        if (indRes.ok) {
-          setIndicators(indJson)
-        }
-
-        const kpiRes = await fetch(`${API_BASE}/kpi/${encodeURIComponent(ticker)}`)
-        const kpiJson = await kpiRes.json().catch(() => ({}))
-        if (kpiRes.ok) setKpi(kpiJson)
-
-        const newsRes = await fetch(`${API_BASE}/news/${encodeURIComponent(ticker)}`)
-        const newsJson = await newsRes.json().catch(() => [])
-        setNews(Array.isArray(newsJson) ? newsJson : [])
+        const newsDelay = initialLoadRef.current ? 1200 : 600
+        setTickerData(transformStockResponse(payload.stock || {}))
+        setIndicators(payload.indicators || null)
+        setKpi(payload.kpi || null)
+        if (initialLoadRef.current) initialLoadRef.current = false
+        newsDelayRef.current = setTimeout(async () => {
+          const newsController = new AbortController()
+          newsFetchRef.current = newsController
+          try {
+            const newsRes = await fetch(`${API_BASE}/news/${encodeURIComponent(ticker)}`, {
+              signal: newsController.signal,
+            })
+            const newsJson = await newsRes.json().catch(() => [])
+            if (newsRes.ok) {
+              setNews(Array.isArray(newsJson) ? newsJson : [])
+            }
+          } catch (err) {
+            if (err.name !== 'AbortError') {
+              // ignore transient news errors
+            }
+          } finally {
+            if (newsFetchRef.current === newsController) {
+              newsFetchRef.current = null
+            }
+          }
+        }, newsDelay)
       } catch (err) {
+        if (err.name === 'AbortError') return
         setDataError(err.message || 'Unable to load ticker data.')
       } finally {
+        if (tickerFetchRef.current === controller) {
+          tickerFetchRef.current = null
+        }
         setDataLoading(false)
+        setBundleReady(true)
       }
     },
     [interval],
@@ -169,6 +223,35 @@ export default function Home() {
     }
   }, [watchlist])
 
+  const fetchScreener = useCallback(
+    async ({ refresh = false } = {}) => {
+      setScreenerRequested(true)
+      setScreenerLoading(true)
+      setScreenerError('')
+      try {
+        const params = new URLSearchParams({
+          metric: screenerMetric,
+          order: 'desc',
+          limit: '20',
+          refresh: refresh ? '1' : '0',
+        })
+        const resp = await fetch(`${API_BASE}/screener/sp500?${params.toString()}`)
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok) {
+          throw new Error(data.detail || resp.statusText)
+        }
+        setScreenerRows(Array.isArray(data.rows) ? data.rows : [])
+        setScreenerRemaining(data.remaining || 0)
+        setScreenerComplete(Boolean(data.complete))
+      } catch (err) {
+        setScreenerError(err.message || 'Unable to load screener.')
+      } finally {
+        setScreenerLoading(false)
+      }
+    },
+    [screenerMetric],
+  )
+
   const runMl = useCallback(
     async (config) => {
       if (!selectedTicker) return
@@ -181,6 +264,9 @@ export default function Home() {
           pre_days: String(config.days),
           features: JSON.stringify(config.features),
         })
+        if (config.arimaOrder) {
+          params.set('arima_order', config.arimaOrder)
+        }
         const resp = await fetch(`${API_BASE}/ml/${encodeURIComponent(selectedTicker)}?${params.toString()}`)
         const data = await resp.json().catch(() => ({}))
         if (!resp.ok) {
@@ -232,6 +318,7 @@ export default function Home() {
   const snapshotKeyRef = useRef('')
   const snapshotDelayRef = useRef()
   useEffect(() => {
+    if (!bundleReady) return
     const key = watchlist.join(',')
     if (typeof window !== 'undefined') {
       if (window.__TP_SNAPSHOT_KEY === key) return
@@ -243,15 +330,16 @@ export default function Home() {
     if (snapshotDelayRef.current) {
       clearTimeout(snapshotDelayRef.current)
     }
+    const delayMs = initialLoadRef.current ? 3500 : 1400
     snapshotDelayRef.current = setTimeout(() => {
       fetchSnapshots()
-    }, 1200)
+    }, delayMs)
     return () => {
       if (snapshotDelayRef.current) {
         clearTimeout(snapshotDelayRef.current)
       }
     }
-  }, [fetchSnapshots, watchlist])
+  }, [fetchSnapshots, watchlist, bundleReady])
 
   const tickerParamsRef = useRef('')
   useEffect(() => {
@@ -325,6 +413,15 @@ export default function Home() {
           onSelect={(symbol) => setSelectedTicker(symbol)}
           onRemove={handleRemoveWatchlist}
           onRefresh={fetchSnapshots}
+          screenerRows={screenerRows}
+          screenerLoading={screenerLoading}
+          screenerError={screenerError}
+          screenerMetric={screenerMetric}
+          screenerRemaining={screenerRemaining}
+          screenerComplete={screenerComplete}
+          screenerRequested={screenerRequested}
+          onScreenerMetricChange={setScreenerMetric}
+          onScreenerLoad={fetchScreener}
         />
 
         <main className="main-content">
@@ -332,6 +429,8 @@ export default function Home() {
             ticker={selectedTicker}
             period={period}
             onPeriodChange={setPeriod}
+            intervalOverride={intervalOverride}
+            onIntervalChange={setIntervalOverride}
             data={chartData}
             indicators={indicators}
             mlSeries={mlSeries}
@@ -455,7 +554,24 @@ function Header({ darkMode, onToggleDarkMode, onSearch, onAddWatchlist }) {
   )
 }
 
-function Sidebar({ watchlistRows, marketRows, loading, error, onSelect, onRemove, onRefresh }) {
+function Sidebar({
+  watchlistRows,
+  marketRows,
+  loading,
+  error,
+  onSelect,
+  onRemove,
+  onRefresh,
+  screenerRows,
+  screenerLoading,
+  screenerError,
+  screenerMetric,
+  screenerRemaining,
+  screenerComplete,
+  screenerRequested,
+  onScreenerMetricChange,
+  onScreenerLoad,
+}) {
   return (
     <aside id="left-pane">
       <div className="watchlist-box">
@@ -517,6 +633,56 @@ function Sidebar({ watchlistRows, marketRows, loading, error, onSelect, onRemove
           ))}
         </ul>
       </div>
+      <div className="screener-box">
+        <div className="section-header">
+          <h2>S&P 500 Screener</h2>
+          <div className="watchlist-actions">
+            <button
+              className="secondary-btn"
+              onClick={() => onScreenerLoad({ refresh: true })}
+              disabled={screenerLoading}
+            >
+              {screenerRequested ? 'Refresh' : 'Load'}
+            </button>
+          </div>
+        </div>
+        <div className="screener-controls">
+          <label>
+            Metric
+            <select value={screenerMetric} onChange={(e) => onScreenerMetricChange(e.target.value)}>
+              {SCREENER_METRICS.map((metric) => (
+                <option key={metric.key} value={metric.key}>
+                  {metric.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {screenerError && <div className="sidebar-error">{screenerError}</div>}
+        <ul>
+          {!screenerRequested && <li className="item-row2">Click Load to fetch rankings.</li>}
+          {screenerRequested && screenerRows.length === 0 && !screenerLoading && (
+            <li className="item-row2">No screener data yet.</li>
+          )}
+          {screenerRows.map((row) => (
+            <li key={row.ticker} className="item-container" onClick={() => onSelect(row.ticker)}>
+              <div className="item-row1">
+                <div className="item-col-ticker">{row.ticker}</div>
+                <div className="item-col-price">{formatScreenerValue(screenerMetric, row.metricValue)}</div>
+                <div className="item-col-daily">{row.exchange || '—'}</div>
+                <div className="item-col-ytd">{row.companyName || 'Unknown'}</div>
+                <div className="item-col-remove"></div>
+              </div>
+              <div className="item-row2">{row.sector || row.industry || '—'}</div>
+            </li>
+          ))}
+        </ul>
+        {screenerRequested && !screenerComplete && (
+          <button className="secondary-btn" onClick={() => onScreenerLoad({ refresh: false })} disabled={screenerLoading}>
+            {screenerLoading ? 'Loading…' : `Load more (${screenerRemaining} remaining)`}
+          </button>
+        )}
+      </div>
     </aside>
   )
 }
@@ -531,6 +697,9 @@ function WatchlistRow({ ticker, data, subtitle, extraActions }) {
       ytdChange: 0,
       ytdPct: 0,
     }
+  const secondaryLine = subtitle
+    ? subtitle
+    : [data?.companyName, data?.exchange].filter(Boolean).join(' · ') || payload.companyName || 'Unknown'
   const dailySign = payload.dailyChange >= 0 ? '+' : ''
   const ytdSign = payload.ytdChange >= 0 ? '+' : ''
 
@@ -547,13 +716,12 @@ function WatchlistRow({ ticker, data, subtitle, extraActions }) {
         </div>
         <div className="item-col-remove">{extraActions}</div>
       </div>
-      {/* Prefer explicit exchange from data if available, then subtitle, then company name */}
-      <div className="item-row2">{(data && (data.exchange || data.companyName)) || subtitle || payload.companyName || 'Unknown'}</div>
+      <div className="item-row2">{secondaryLine}</div>
     </>
   )
 }
 
-function ChartPanel({ ticker, period, onPeriodChange, data, indicators, mlSeries, error, darkMode }) {
+function ChartPanel({ ticker, period, onPeriodChange, intervalOverride, onIntervalChange, data, indicators, mlSeries, error, darkMode }) {
   const containerRef = useRef(null)
   const indicatorContainerRef = useRef(null)
   const chartRef = useRef(null)
@@ -837,6 +1005,18 @@ function ChartPanel({ ticker, period, onPeriodChange, data, indicators, mlSeries
             </button>
           ))}
         </div>
+        <div className="interval-controls">
+          {CANDLE_INTERVALS.map((item) => (
+            <button
+              key={item.key}
+              className={`timeframe-btn ${item.value === intervalOverride ? 'active' : ''}`}
+              onClick={() => onIntervalChange(item.value)}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
       {error && <div className="panel-error">{error}</div>}
       {!error && (!data.candles || data.candles.length === 0) && (
@@ -937,6 +1117,48 @@ function KpiTable({ kpi }) {
             <th>Beta</th>
             <td>{kpi.beta}</td>
           </tr>
+          <tr>
+            <th>Free Cash Flow</th>
+            <td>{formatLargeNumber(kpi.freeCashflow)}</td>
+            <th>Operating Cash Flow</th>
+            <td>{formatLargeNumber(kpi.operatingCashflow)}</td>
+          </tr>
+          <tr>
+            <th>FCF Yield</th>
+            <td>{formatPercent(kpi.fcfYield)}</td>
+            <th>Current Ratio</th>
+            <td>{formatNumber(kpi.currentRatio)}</td>
+          </tr>
+          <tr>
+            <th>Total Cash</th>
+            <td>{formatLargeNumber(kpi.totalCash)}</td>
+            <th>Total Debt</th>
+            <td>{formatLargeNumber(kpi.totalDebt)}</td>
+          </tr>
+          <tr>
+            <th>Debt / Equity</th>
+            <td>{formatNumber(kpi.debtToEquity)}</td>
+            <th>Revenue</th>
+            <td>{formatLargeNumber(kpi.totalRevenue)}</td>
+          </tr>
+          <tr>
+            <th>EBITDA</th>
+            <td>{formatLargeNumber(kpi.ebitda)}</td>
+            <th>Profit Margin</th>
+            <td>{formatPercent(kpi.profitMargin)}</td>
+          </tr>
+          <tr>
+            <th>ROE</th>
+            <td>{formatPercent(kpi.returnOnEquity)}</td>
+            <th>ROA</th>
+            <td>{formatPercent(kpi.returnOnAssets)}</td>
+          </tr>
+          <tr>
+            <th>Dividend</th>
+            <td>{formatNumber(kpi.dividend)}</td>
+            <th>EPS</th>
+            <td>{formatNumber(kpi.eps)}</td>
+          </tr>
         </tbody>
       </table>
     </section>
@@ -946,6 +1168,7 @@ function KpiTable({ kpi }) {
 function MlControls({ models, loading, error, onRun, ticker }) {
   const [model, setModel] = useState(models[0] || 'XGBoost')
   const [days, setDays] = useState(20)
+  const [arimaOrder, setArimaOrder] = useState('5,1,0')
   const [features, setFeatures] = useState(() => {
     const initial = {}
     ML_FEATURES.forEach((f) => {
@@ -984,6 +1207,17 @@ function MlControls({ models, loading, error, onRun, ticker }) {
             ))}
           </select>
         </label>
+        {model === 'ARIMA' && (
+          <label>
+            ARIMA (p,d,q)
+            <input
+              type="text"
+              value={arimaOrder}
+              onChange={(e) => setArimaOrder(e.target.value)}
+              placeholder="5,1,0"
+            />
+          </label>
+        )}
       </div>
       <div className="ml-features">
         {ML_FEATURES.map((feature) => (
@@ -1007,11 +1241,11 @@ function MlControls({ models, loading, error, onRun, ticker }) {
         className="primary-btn"
         disabled={loading}
         onClick={() => {
-          if (!Object.values(features).some(Boolean)) {
+          if (model !== 'ARIMA' && !Object.values(features).some(Boolean)) {
             alert('Select at least one feature')
             return
           }
-          onRun({ model, days, features })
+          onRun({ model, days, features, arimaOrder })
         }}
       >
         {loading ? 'Running…' : `Run ML for ${ticker}`}
@@ -1124,4 +1358,20 @@ function formatLargeNumber(value) {
   if (value >= 1e9) return `${(value / 1e9).toFixed(1)}B`
   if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`
   return `${(value / 1e3).toFixed(1)}K`
+}
+
+function formatPercent(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return value ?? 'N/A'
+  const pct = Math.abs(value) <= 1 ? value * 100 : value
+  return `${pct.toFixed(2)}%`
+}
+
+function formatScreenerValue(metric, value) {
+  if (metric === 'profitMargin' || metric === 'returnOnEquity' || metric === 'returnOnAssets' || metric === 'fcfYield') {
+    return formatPercent(value)
+  }
+  if (metric === 'marketCap' || metric === 'freeCashflow' || metric === 'operatingCashflow' || metric === 'totalRevenue') {
+    return formatLargeNumber(value)
+  }
+  return formatNumber(value)
 }

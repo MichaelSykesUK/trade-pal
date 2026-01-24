@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import GradientBoostingRegressor
 from xgboost import XGBRegressor
-import yfinance as yf
+from backend.tools import download_prices
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -71,7 +71,7 @@ class StockPredictionModel:
     def load_data(self):
         """Load ticker data from Yahoo Finance."""
         try:
-            data = yf.download(
+            data = download_prices(
                 self.ticker, period=self.period, interval=self.interval)
             if data.empty:
                 raise ValueError("No price history returned")
