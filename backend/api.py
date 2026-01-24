@@ -379,14 +379,11 @@ def ml_predictions(
 
 
 # ---------- Static files ----------
-# Detect whichever frontend build exists (Vite, Next, or legacy) to avoid hard failures.
+# Detect whichever frontend build exists (Vite) to avoid hard failures.
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_CANDIDATES = [
     BASE_DIR / "frontend-vite" / "dist",
     BASE_DIR / "frontend-vite",
-    BASE_DIR / "frontend-next" / "out",
-    BASE_DIR / "frontend-next",
-    BASE_DIR / "frontend",
 ]
 STATIC_DIR = next((candidate for candidate in STATIC_CANDIDATES if candidate.exists()), None)
 

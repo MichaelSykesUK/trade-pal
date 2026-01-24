@@ -26,20 +26,20 @@ conda activate tradepal
 pip install -r backend/requirements.txt
 ```
 
-### Frontend
+### Frontend (Vite)
 ```bash
-cd frontend
+cd frontend-vite
 npm install
 ```
 If your backend does **not** run on `http://localhost:8000`, add a `.env.local`
-file under `frontend/` with:
+file under `frontend-vite/` with:
 ```
-NEXT_PUBLIC_API_BASE=https://your-api-host
+VITE_API_BASE=https://your-api-host
 ```
 
 ## ▶️ Run the Application
 
-Run the backend (FastAPI) and frontend (Next.js) in two terminals:
+Run the backend (FastAPI) and frontend (Vite) in two terminals:
 
 ```bash
 # Terminal 1
@@ -47,12 +47,12 @@ conda activate tradepal  # or source your venv
 uvicorn backend.api:app --reload --port 8000
 
 # Terminal 2
-cd frontend
+cd frontend-vite
 npm run dev
 ```
 
 - Backend API: `http://127.0.0.1:8000`
-- Frontend UI: `http://127.0.0.1:3000`
+- Frontend UI: `http://127.0.0.1:5173`
 
 The frontend talks to the backend through REST calls; keep both processes running while you work.
 
@@ -74,16 +74,16 @@ The frontend talks to the backend through REST calls; keep both processes runnin
 │   ├── ml.py               # Machine learning models and logic
 │   └── requirements.txt    # Python dependencies
 │
-├── frontend/
-│   ├── pages/              # Next.js routes (legacy DOM rendered in React)
-│   ├── public/static/      # Legacy JS bundle and assets
-│   └── styles/             # Global CSS imported by `_app.jsx`
+├── frontend-vite/
+│   ├── src/                # React app source
+│   ├── index.html          # Vite entry
+│   └── vite.config.js      # Vite config
 ```
 
 ## 🧠 Developer Notes
 - Yahoo Finance is rate-limited — requests are retried with exponential backoff and cached on the backend.
 - The frontend fetches market/watchlist data via a single `/watchlist_data/batch` call and debounces autocomplete requests to stay under rate limits.
-- The UI is implemented entirely in React/Next.js (header, sidebar, charts, KPI, ML controls); Lightweight Charts is loaded globally in `_app.jsx`.
+- The UI is implemented entirely in React (Vite); Lightweight Charts powers the charting components.
 - ML model predictions support ARIMA, XGBoost, RandomForest, etc.
 
 ## 📌 Updating Dependencies
