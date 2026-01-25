@@ -27,6 +27,9 @@ SP500_CACHE_PATH = Path(__file__).resolve().parent / "output" / "sp500_cache.jso
 SP500_UNIVERSE_PATH = Path(__file__).resolve().parent / "data" / "sp500.csv"
 SP500_UNIVERSE_CACHE_PATH = Path(__file__).resolve().parent / "output" / "sp500_universe.json"
 SP500_UNIVERSE_TTL = 86400  # 24 hours
+WATCHLIST_CACHE_PATH = Path(__file__).resolve().parent / "output" / "watchlist_cache.json"
+YF_STATE_PATH = Path(__file__).resolve().parent / "output" / "yf_state.json"
+BUNDLE_CACHE_PATH = Path(__file__).resolve().parent / "output" / "bundle_cache.json"
 DEFAULT_SP500 = [
     "AAPL", "MSFT", "AMZN", "GOOGL", "GOOG", "META", "NVDA", "BRK-B", "TSLA",
     "JPM", "V", "JNJ", "UNH", "XOM", "PG", "MA", "LLY", "AVGO", "HD", "COST",
@@ -44,7 +47,11 @@ _YF_LOCK = Lock()
 _LAST_YF_CALL = 0.0
 _MIN_CALL_INTERVAL = 4.0
 _YF_COOLDOWN_UNTIL = 0.0
-_YF_COOLDOWN_SECONDS = 60
+_YF_COOLDOWN_SECONDS = 300
+
+_WATCHLIST_CACHE_LOADED = False
+_COOLDOWN_STATE_LOADED = False
+_BUNDLE_CACHE_LOADED = False
 
 INTRADAY_INTERVAL_MAX_DAYS = {
     "1m": 7,
@@ -135,12 +142,25 @@ def _normalize_interval(interval: str | None) -> str | None:
     return interval.lower().strip()
 
 def _cooldown_active() -> bool:
+    if not _COOLDOWN_STATE_LOADED:
+        _load_yf_cooldown_state()
     return time.time() < _YF_COOLDOWN_UNTIL
 
 
+def _rate_limit_error(message: str | None = None) -> YFRateLimitError:
+    """Create a YFRateLimitError without passing args (yfinance expects none)."""
+    err = YFRateLimitError()
+    if message:
+        # Populate args for logging/debugging without breaking yfinance's init.
+        err.args = (message,)
+    return err
+
+
 def _start_yf_cooldown(seconds: float = _YF_COOLDOWN_SECONDS):
-    global _YF_COOLDOWN_UNTIL
+    global _YF_COOLDOWN_UNTIL, _COOLDOWN_STATE_LOADED
     _YF_COOLDOWN_UNTIL = max(_YF_COOLDOWN_UNTIL, time.time() + seconds)
+    _COOLDOWN_STATE_LOADED = True
+    _persist_yf_cooldown_state()
 
 
 def _cooldown_remaining_seconds() -> int:
@@ -280,6 +300,119 @@ def _cache_set(cache: dict, key: tuple, value: dict):
     cache[key] = (time.time(), value)
 
 
+def _bundle_cache_key(ticker: str, period: str, interval: str) -> str:
+    return f"{ticker}|{period}|{interval}"
+
+
+def _ensure_bundle_cache_loaded():
+    global _BUNDLE_CACHE_LOADED
+    if _BUNDLE_CACHE_LOADED:
+        return
+    _BUNDLE_CACHE_LOADED = True
+    try:
+        if not BUNDLE_CACHE_PATH.exists():
+            return
+        payload = json.loads(BUNDLE_CACHE_PATH.read_text())
+        stock_items = payload.get("stock", {})
+        indicator_items = payload.get("indicators", {})
+        kpi_items = payload.get("kpi", {})
+        for key, entry in stock_items.items():
+            ts = float(entry.get("ts", 0))
+            data = entry.get("payload") or {}
+            if ts > 0 and isinstance(data, dict):
+                parts = key.split("|")
+                if len(parts) == 3:
+                    STOCK_CACHE[(parts[0], parts[1], parts[2])] = (ts, data)
+        for key, entry in indicator_items.items():
+            ts = float(entry.get("ts", 0))
+            data = entry.get("payload") or {}
+            if ts > 0 and isinstance(data, dict):
+                parts = key.split("|")
+                if len(parts) == 3:
+                    INDICATOR_CACHE[(parts[0], parts[1], parts[2])] = (ts, data)
+        for key, entry in kpi_items.items():
+            ts = float(entry.get("ts", 0))
+            data = entry.get("payload") or {}
+            if ts > 0 and isinstance(data, dict):
+                KPI_CACHE[(key,)] = (ts, data)
+    except Exception:
+        pass
+
+
+def _persist_bundle_cache():
+    try:
+        BUNDLE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "stock": {
+                _bundle_cache_key(key[0], key[1], key[2]): {"ts": ts, "payload": data}
+                for key, (ts, data) in STOCK_CACHE.items()
+            },
+            "indicators": {
+                _bundle_cache_key(key[0], key[1], key[2]): {"ts": ts, "payload": data}
+                for key, (ts, data) in INDICATOR_CACHE.items()
+            },
+            "kpi": {key[0]: {"ts": ts, "payload": data} for key, (ts, data) in KPI_CACHE.items()},
+        }
+        BUNDLE_CACHE_PATH.write_text(json.dumps(payload))
+    except Exception:
+        pass
+
+
+def _load_yf_cooldown_state():
+    global _YF_COOLDOWN_UNTIL, _COOLDOWN_STATE_LOADED
+    _COOLDOWN_STATE_LOADED = True
+    try:
+        if not YF_STATE_PATH.exists():
+            return
+        payload = json.loads(YF_STATE_PATH.read_text())
+        cooldown_until = float(payload.get("cooldown_until", 0))
+        if cooldown_until > time.time():
+            _YF_COOLDOWN_UNTIL = cooldown_until
+    except Exception:
+        pass
+
+
+def _persist_yf_cooldown_state():
+    try:
+        YF_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        YF_STATE_PATH.write_text(json.dumps({"cooldown_until": _YF_COOLDOWN_UNTIL}))
+    except Exception:
+        pass
+
+
+def _ensure_watchlist_cache_loaded():
+    global _WATCHLIST_CACHE_LOADED
+    if _WATCHLIST_CACHE_LOADED:
+        return
+    _WATCHLIST_CACHE_LOADED = True
+    try:
+        if not WATCHLIST_CACHE_PATH.exists():
+            return
+        payload = json.loads(WATCHLIST_CACHE_PATH.read_text())
+        items = payload.get("items", {})
+        for ticker, entry in items.items():
+            ts = float(entry.get("ts", 0))
+            data = entry.get("payload") or {}
+            if ticker and isinstance(data, dict) and ts > 0:
+                WATCHLIST_CACHE[str(ticker).upper()] = (ts, data)
+    except Exception:
+        pass
+
+
+def _persist_watchlist_cache():
+    try:
+        WATCHLIST_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "items": {
+                ticker: {"ts": ts, "payload": data}
+                for ticker, (ts, data) in WATCHLIST_CACHE.items()
+            }
+        }
+        WATCHLIST_CACHE_PATH.write_text(json.dumps(payload))
+    except Exception:
+        pass
+
+
 def _get_ticker_info(ticker: str) -> dict:
     cache_key = (ticker,)
     cached = _cache_get(INFO_CACHE, cache_key, INFO_CACHE_TTL)
@@ -369,7 +502,7 @@ def _throttled_call(fn, *args, **kwargs):
     global _LAST_YF_CALL
     with _YF_LOCK:
         if _cooldown_active():
-            raise YFRateLimitError("Yahoo Finance cooldown active.")
+            raise _rate_limit_error("Yahoo Finance cooldown active.")
         wait = _MIN_CALL_INTERVAL - (time.time() - _LAST_YF_CALL)
         if wait > 0:
             time.sleep(wait + random.uniform(0.05, 0.3))
@@ -377,13 +510,22 @@ def _throttled_call(fn, *args, **kwargs):
             return fn(*args, **kwargs)
         finally:
             _LAST_YF_CALL = time.time()
+            if hasattr(yf_shared, "_ERRORS"):
+                try:
+                    yf_shared._ERRORS.clear()
+                except Exception:
+                    pass
 
 
 def _download_prices(*args, retries: int = 5, **kwargs):
     backoff = 1.5
     last_err: Exception | None = None
+    if "auto_adjust" not in kwargs:
+        kwargs["auto_adjust"] = False
+    if "progress" not in kwargs:
+        kwargs["progress"] = False
     if _cooldown_active():
-        raise YFRateLimitError("Yahoo Finance cooldown active.")
+        raise _rate_limit_error("Yahoo Finance cooldown active.")
     for attempt in range(retries):
         try:
             data = _singleflight_run(("yf.download", args, kwargs), _throttled_call, yf.download, *args, **kwargs)
@@ -394,12 +536,17 @@ def _download_prices(*args, retries: int = 5, **kwargs):
             last_err = exc
         else:
             if _rate_limit_detected():
-                last_err = YFRateLimitError("Yahoo Finance rate limit exceeded.")
+                last_err = _rate_limit_error("Yahoo Finance rate limit exceeded.")
                 _start_yf_cooldown()
             elif data.empty:
                 last_err = ValueError("No data found for request.")
                 break
             else:
+                if hasattr(yf_shared, "_ERRORS"):
+                    try:
+                        yf_shared._ERRORS.clear()
+                    except Exception:
+                        pass
                 return data
         time.sleep(backoff)
         backoff *= 1.5
@@ -407,7 +554,7 @@ def _download_prices(*args, retries: int = 5, **kwargs):
             _start_yf_cooldown()
     if isinstance(last_err, ValueError):
         raise last_err
-    raise last_err or YFRateLimitError("Yahoo Finance rate limit exceeded.")
+    raise last_err or _rate_limit_error("Yahoo Finance rate limit exceeded.")
 
 
 def _empty_stock_payload():
@@ -442,6 +589,7 @@ def _empty_kpi_payload():
 
 
 def get_stock_bundle(ticker: str, period: str = "1y", interval: str = "1d") -> dict:
+    _ensure_bundle_cache_loaded()
     cache_key = (ticker, period, interval)
     cached_stock = _cache_get(STOCK_CACHE, cache_key, STOCK_CACHE_TTL)
     cached_indicators = _cache_get(INDICATOR_CACHE, cache_key, INDICATOR_CACHE_TTL)
@@ -486,6 +634,7 @@ def get_stock_bundle(ticker: str, period: str = "1y", interval: str = "1d") -> d
     _cache_set(STOCK_CACHE, cache_key, stock_payload)
     _cache_set(INDICATOR_CACHE, cache_key, indicator_payload)
     _cache_set(KPI_CACHE, (ticker,), kpi_payload)
+    _persist_bundle_cache()
 
     return {
         "stock": stock_payload,
@@ -494,6 +643,7 @@ def get_stock_bundle(ticker: str, period: str = "1y", interval: str = "1d") -> d
     }
 
 def get_stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
+    _ensure_bundle_cache_loaded()
     extended_period = get_extended_period(period, interval)
     cache_key = (ticker, period, interval)
     if _placeholder_active(STOCK_PLACEHOLDERS, cache_key):
@@ -514,10 +664,12 @@ def get_stock_data(ticker: str, period: str = "1y", interval: str = "1d"):
     data = _normalize_history_df(data, ticker)
     payload = _stock_payload_from_df(data, period)
     _cache_set(STOCK_CACHE, cache_key, payload)
+    _persist_bundle_cache()
     return payload
 
 
 def get_kpi_data(ticker: str, history: pd.DataFrame | None = None):
+    _ensure_bundle_cache_loaded()
     cache_key = (ticker,)
     cached = _cache_get(KPI_CACHE, cache_key, KPI_CACHE_TTL)
     if cached:
@@ -559,14 +711,28 @@ def get_kpi_data(ticker: str, history: pd.DataFrame | None = None):
             avg_volume = _safe_price(hist_52w["Volume"].mean())
     else:
         stock = yf.Ticker(ticker)
-        hist = _singleflight_run(("history-1d", ticker), _throttled_call, stock.history, period="1d", interval="1d")
+        hist = _singleflight_run(
+            ("history-1d", ticker),
+            _throttled_call,
+            stock.history,
+            period="1d",
+            interval="1d",
+            auto_adjust=False,
+        )
         if not hist.empty:
             hist = hist.reset_index()
             open_price = _safe_price(hist["Open"].iloc[-1]) if not hist["Open"].empty else None
             day_low = _safe_price(hist["Low"].iloc[-1]) if not hist["Low"].empty else None
             day_high = _safe_price(hist["High"].iloc[-1]) if not hist["High"].empty else None
 
-        hist_52w = _singleflight_run(("history-1y", ticker), _throttled_call, stock.history, period="1y", interval="1d")
+        hist_52w = _singleflight_run(
+            ("history-1y", ticker),
+            _throttled_call,
+            stock.history,
+            period="1y",
+            interval="1d",
+            auto_adjust=False,
+        )
         if not hist_52w.empty:
             week_low_52 = _safe_price(hist_52w["Low"].min())
             week_high_52 = _safe_price(hist_52w["High"].max())
@@ -726,6 +892,7 @@ def get_kpi_data(ticker: str, history: pd.DataFrame | None = None):
         "fcfConversionEbit": fcf_conversion_ebit,
     }
     _cache_set(KPI_CACHE, cache_key, kpi)
+    _persist_bundle_cache()
     return kpi
 
 
@@ -801,6 +968,7 @@ def get_technical_indicators(
     interval: str = "1d",
     data: pd.DataFrame | None = None,
 ):
+    _ensure_bundle_cache_loaded()
     cache_key = (ticker, period, interval)
     if _placeholder_active(INDICATOR_PLACEHOLDERS, cache_key):
         return _empty_indicator_payload()
@@ -823,6 +991,7 @@ def get_technical_indicators(
 
     payload = _indicators_from_df(data)
     _cache_set(INDICATOR_CACHE, cache_key, payload)
+    _persist_bundle_cache()
     return payload
 
 
@@ -910,6 +1079,7 @@ def get_watchlist_batch(tickers: list[str]) -> dict:
     Fetch watchlist metrics while batching downloads, caching recent responses,
     and degrading gracefully on rate limits.
     """
+    _ensure_watchlist_cache_loaded()
     clean = [t.strip().upper() for t in tickers if t and t.strip()]
     if not clean:
         return {}
@@ -969,6 +1139,9 @@ def get_watchlist_batch(tickers: list[str]) -> dict:
 
     for t in clean:
         results.setdefault(t, _default_watchlist_payload())
+
+    if results:
+        _persist_watchlist_cache()
 
     return results
 
@@ -1336,3 +1509,6 @@ def get_sp500_screener(metric: str = "freeCashflow", order: str = "desc", limit:
         "cooldown": _cooldown_active(),
         "cooldownSeconds": _cooldown_remaining_seconds(),
     }
+
+
+_load_yf_cooldown_state()

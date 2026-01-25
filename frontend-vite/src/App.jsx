@@ -56,18 +56,33 @@ const LOWER_INDICATORS = [
 ]
 
 const ML_FEATURES = [
-  { key: 'ma50', label: 'MA(50)' },
-  { key: 'ma100', label: 'MA(100)' },
-  { key: 'ma150', label: 'MA(150)' },
-  { key: 'ma200', label: 'MA(200)' },
-  { key: 'bollinger', label: 'Bollinger Bands' },
-  { key: 'rsi', label: 'RSI' },
-  { key: 'obv', label: 'OBV' },
-  { key: 'atr', label: 'ATR' },
-  { key: 'macd', label: 'MACD' },
-  { key: 'volatility', label: 'Volatility' },
-  { key: 'momentum', label: 'Momentum' },
+  { key: 'ma50', label: 'MA(50)', defaultOn: true },
+  { key: 'ma100', label: 'MA(100)', defaultOn: false },
+  { key: 'ma150', label: 'MA(150)', defaultOn: true },
+  { key: 'ma200', label: 'MA(200)', defaultOn: false },
+  { key: 'ema50', label: 'EMA(50)', defaultOn: false },
+  { key: 'bollinger', label: 'Bollinger Bands', defaultOn: true },
+  { key: 'rsi', label: 'RSI', defaultOn: true },
+  { key: 'obv', label: 'OBV', defaultOn: true },
+  { key: 'atr', label: 'ATR', defaultOn: false },
+  { key: 'macd', label: 'MACD', defaultOn: true },
+  { key: 'volatility', label: 'Volatility', defaultOn: false },
+  { key: 'momentum', label: 'Momentum', defaultOn: true },
+  { key: 'sp500_ret', label: 'S&P 500 (1D %)', defaultOn: false },
+  { key: 'fed_funds', label: 'Fed Funds Rate', defaultOn: false },
+  { key: 'dgs10', label: '10Y Treasury', defaultOn: false },
+  { key: 'dgs2', label: '2Y Treasury', defaultOn: false },
+  { key: 'yield_curve_10y_2y', label: 'Yield Curve (10Y-2Y)', defaultOn: false },
+  { key: 'cpi_yoy', label: 'CPI YoY', defaultOn: false },
+  { key: 'pce_yoy', label: 'PCE YoY', defaultOn: false },
+  { key: 'vix_ret', label: 'VIX (1D %)', defaultOn: false },
+  { key: 'wti_ret', label: 'WTI Oil (1D %)', defaultOn: false },
+  { key: 'usd_ret', label: 'USD Broad (1D %)', defaultOn: false },
+  { key: 'gold_ret', label: 'Gold (GLD, 1D %)', defaultOn: false },
+  { key: 'silver_ret', label: 'Silver (SLV, 1D %)', defaultOn: false },
 ]
+
+const ML_MODEL_ALLOWLIST = ['XGBoost', 'RandomForest', 'GBR']
 
 const ML_DAYS = [5, 20, 60, 120]
 const CHART_TYPES = [
@@ -144,6 +159,7 @@ function App() {
   const [intervalOverride, setIntervalOverride] = useState(null)
 
   const [watchlist, setWatchlist] = useState(DEFAULT_WATCHLIST)
+  const [watchlistReady, setWatchlistReady] = useState(false)
   const [snapshots, setSnapshots] = useState({})
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchError, setBatchError] = useState('')
@@ -174,12 +190,27 @@ function App() {
   const newsDelayRef = useRef(null)
   const initialLoadRef = useRef(true)
 
-  const [{ mlSeries, mlLoading, mlError }, setMlState] = useState({
+  const [
+    { mlSeries, mlLoading, mlError, mlMetrics, mlValidation, mlModelUsed, mlRequestedModel, mlAutoRetrained, mlSearch, mlCached },
+    setMlState,
+  ] = useState({
     mlSeries: [],
     mlLoading: false,
     mlError: '',
+    mlMetrics: null,
+    mlValidation: null,
+    mlModelUsed: null,
+    mlRequestedModel: null,
+    mlAutoRetrained: false,
+    mlSearch: null,
+    mlCached: false,
   })
   const [mlModels, setMlModels] = useState([])
+  const [macroSeries, setMacroSeries] = useState([])
+  const [macroKey, setMacroKey] = useState('sp500_ret')
+  const [macroData, setMacroData] = useState(null)
+  const [macroLoading, setMacroLoading] = useState(false)
+  const [macroError, setMacroError] = useState('')
 
   const baseInterval = useMemo(
     () => TIMEFRAMES.find((item) => item.value === period)?.interval || '1d',
@@ -330,6 +361,9 @@ function App() {
           pre_days: String(config.days),
           features: JSON.stringify(config.features),
         })
+        if (config.refresh) {
+          params.set('refresh', '1')
+        }
         if (config.arimaOrder) {
           params.set('arima_order', config.arimaOrder)
         }
@@ -343,28 +377,78 @@ function App() {
             time: Math.floor(new Date(date).getTime() / 1000),
             value: data.projected.Predicted[idx],
           })) || []
-        setMlState({ mlSeries: projection, mlLoading: false, mlError: '' })
+        setMlState({
+          mlSeries: projection,
+          mlLoading: false,
+          mlError: '',
+          mlMetrics: data.metrics || null,
+          mlValidation: data.validation || null,
+          mlModelUsed: data.model_used || config.model,
+          mlRequestedModel: data.requested_model || config.model,
+          mlAutoRetrained: Boolean(data.auto_retrained),
+          mlSearch: data.search || null,
+          mlCached: Boolean(data.cached),
+        })
       } catch (err) {
-        setMlState({ mlSeries: [], mlLoading: false, mlError: err.message || 'ML run failed.' })
+        setMlState({
+          mlSeries: [],
+          mlLoading: false,
+          mlError: err.message || 'ML run failed.',
+          mlMetrics: null,
+          mlValidation: null,
+          mlModelUsed: null,
+          mlRequestedModel: null,
+          mlAutoRetrained: false,
+          mlSearch: null,
+          mlCached: false,
+        })
       }
     },
     [interval, period, selectedTicker],
   )
 
   const clearMl = useCallback(() => {
-    setMlState({ mlSeries: [], mlLoading: false, mlError: '' })
+    setMlState({
+      mlSeries: [],
+      mlLoading: false,
+      mlError: '',
+      mlMetrics: null,
+      mlValidation: null,
+      mlModelUsed: null,
+      mlRequestedModel: null,
+      mlAutoRetrained: false,
+      mlSearch: null,
+      mlCached: false,
+    })
   }, [])
 
   useEffect(() => {
-    const saved = localStorage.getItem('tradepal:watchlist')
-    if (saved) {
+    const loadWatchlist = async () => {
+      const saved = localStorage.getItem('tradepal:watchlist')
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          if (Array.isArray(parsed) && parsed.length) {
+            setWatchlist(parsed)
+            setWatchlistReady(true)
+            return
+          }
+        } catch (_) {}
+      }
       try {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length) {
-          setWatchlist(parsed)
+        const resp = await fetch(`${API_BASE}/config/watchlist`)
+        const data = await resp.json().catch(() => ({}))
+        if (resp.ok && Array.isArray(data.watchlist) && data.watchlist.length) {
+          setWatchlist(data.watchlist)
+          setWatchlistReady(true)
+          return
         }
       } catch (_) {}
+      setWatchlist(DEFAULT_WATCHLIST)
+      setWatchlistReady(true)
     }
+    loadWatchlist()
+
     const storedTheme = localStorage.getItem('tradepal:theme')
     if (storedTheme === 'dark') {
       setDarkMode(true)
@@ -372,8 +456,23 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!watchlistReady) return
     localStorage.setItem('tradepal:watchlist', JSON.stringify(watchlist))
-  }, [watchlist])
+  }, [watchlist, watchlistReady])
+
+  useEffect(() => {
+    if (!watchlistReady) return
+    const handle = setTimeout(async () => {
+      try {
+        await fetch(`${API_BASE}/config/watchlist`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tickers: watchlist }),
+        })
+      } catch (_) {}
+    }, 400)
+    return () => clearTimeout(handle)
+  }, [watchlist, watchlistReady])
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'
@@ -426,13 +525,35 @@ function App() {
         const resp = await fetch(`${API_BASE}/ml/models`)
         const data = await resp.json().catch(() => [])
         if (Array.isArray(data)) {
-          setMlModels(data)
+          const filtered = data.filter((name) => ML_MODEL_ALLOWLIST.includes(name))
+          setMlModels(filtered.length ? filtered : data)
         }
       } catch (_) {
-        setMlModels(['XGBoost', 'RandomForest', 'LinearRegression'])
+        setMlModels(ML_MODEL_ALLOWLIST)
       }
     }
     loadModels()
+  }, [])
+
+  useEffect(() => {
+    const loadMacroSeries = async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/macro/series`)
+        const data = await resp.json().catch(() => ({}))
+        const series = Array.isArray(data.series) ? data.series : []
+        setMacroSeries(series)
+        if (series.length) {
+          setMacroKey((prev) => {
+            if (series.find((s) => s.key === prev)) return prev
+            const preferred = series.find((s) => s.key === 'sp500_ret') || series[0]
+            return preferred.key
+          })
+        }
+      } catch (_) {
+        setMacroSeries([])
+      }
+    }
+    loadMacroSeries()
   }, [])
 
   const handleAddToWatchlist = useCallback((symbol) => {
@@ -542,6 +663,96 @@ function App() {
       }
     : { candles: [], volumes: [] }
 
+  const selectedMacroSpec = useMemo(
+    () => macroSeries.find((item) => item.key === macroKey),
+    [macroSeries, macroKey],
+  )
+
+  const macroOverlaySeries = useMemo(() => {
+    if (!macroData?.Date?.length || !macroKey) return []
+    const values = macroData[macroKey] || []
+    const dates = macroData.Date
+    if (!values.length || !dates.length) return []
+    const points = []
+    if (selectedMacroSpec?.transform === 'pct_change') {
+      let index = 100
+      for (let i = 0; i < dates.length; i += 1) {
+        const raw = values[i]
+        if (raw == null || Number.isNaN(raw)) continue
+        index *= 1 + raw
+        points.push({
+          time: Math.floor(new Date(dates[i]).getTime() / 1000),
+          value: index,
+        })
+      }
+      return points
+    }
+    const first = values.find((val) => val != null && !Number.isNaN(val))
+    if (first == null || first === 0) {
+      for (let i = 0; i < dates.length; i += 1) {
+        const raw = values[i]
+        if (raw == null || Number.isNaN(raw)) continue
+        points.push({
+          time: Math.floor(new Date(dates[i]).getTime() / 1000),
+          value: raw,
+        })
+      }
+      return points
+    }
+    for (let i = 0; i < dates.length; i += 1) {
+      const raw = values[i]
+      if (raw == null || Number.isNaN(raw)) continue
+      points.push({
+        time: Math.floor(new Date(dates[i]).getTime() / 1000),
+        value: (raw / first) * 100,
+      })
+    }
+    return points
+  }, [macroData, macroKey, selectedMacroSpec])
+
+  const macroRange = useMemo(() => {
+    if (!chartData.candles?.length) return null
+    const start = new Date(chartData.candles[0].time * 1000).toISOString().slice(0, 10)
+    const end = new Date(chartData.candles[chartData.candles.length - 1].time * 1000)
+      .toISOString()
+      .slice(0, 10)
+    return { start, end }
+  }, [chartData.candles])
+
+  useEffect(() => {
+    if (!macroKey || !macroRange?.start || !macroRange?.end) return
+    const controller = new AbortController()
+    const loadMacroData = async () => {
+      setMacroLoading(true)
+      setMacroError('')
+      try {
+        const params = new URLSearchParams({
+          keys: macroKey,
+          start: macroRange.start,
+          end: macroRange.end,
+        })
+        const resp = await fetch(`${API_BASE}/macro/data?${params.toString()}`, {
+          signal: controller.signal,
+        })
+        const data = await resp.json().catch(() => ({}))
+        if (!resp.ok) {
+          throw new Error(data.detail || resp.statusText)
+        }
+        setMacroData(data.data || null)
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          setMacroError(err.message || 'Unable to load macro data.')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setMacroLoading(false)
+        }
+      }
+    }
+    loadMacroData()
+    return () => controller.abort()
+  }, [macroKey, macroRange])
+
   return (
     <div className="app-shell">
       <Header
@@ -579,6 +790,8 @@ function App() {
             data={chartData}
             indicators={indicators}
             mlSeries={mlSeries}
+            macroOverlay={macroOverlaySeries}
+            macroOverlayLabel={selectedMacroSpec?.label || 'Macro'}
             error={dataError}
             darkMode={darkMode}
             kpi={kpi}
@@ -596,6 +809,26 @@ function App() {
               loading={mlLoading}
               error={mlError}
               onRun={runMl}
+              ticker={selectedTicker}
+              metrics={mlMetrics}
+              validation={mlValidation}
+              modelUsed={mlModelUsed}
+              requestedModel={mlRequestedModel}
+              autoRetrained={mlAutoRetrained}
+              search={mlSearch}
+              cached={mlCached}
+            />
+          </div>
+          <div className="panel-row">
+            <MacroPanel
+              seriesOptions={macroSeries}
+              selectedKey={macroKey}
+              onSelectKey={setMacroKey}
+              data={macroData}
+              stockCandles={chartData.candles}
+              loading={macroLoading}
+              error={macroError}
+              darkMode={darkMode}
               ticker={selectedTicker}
             />
           </div>
@@ -1066,6 +1299,58 @@ function WatchlistRow({ ticker, data, subtitle, extraActions }) {
   )
 }
 
+function MenuSelect({ label, valueLabel, options, selectedValue, onSelect, disabled, alignRight = false }) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    const handleClick = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
+  return (
+    <div className={`menu-select ${alignRight ? 'menu-right' : ''}`} ref={menuRef}>
+      <button
+        type="button"
+        className="secondary-btn menu-trigger"
+        onClick={() => setOpen((prev) => !prev)}
+        disabled={disabled}
+      >
+        <span className="menu-label">{label}:</span>
+        <span className="menu-value">{valueLabel}</span>
+        <span className="menu-caret">v</span>
+      </button>
+      {open && (
+        <div className="menu-panel">
+          {options.map((option) => {
+            const selected = option.value === selectedValue
+            return (
+              <button
+                key={`${label}-${String(option.value)}`}
+                type="button"
+                className={`menu-item ${selected ? 'selected' : ''}`}
+                disabled={option.disabled}
+                onClick={() => {
+                  setOpen(false)
+                  onSelect(option.value)
+                }}
+              >
+                <span className={`menu-check ${selected ? 'on' : ''}`} aria-hidden="true" />
+                <span>{option.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ChartPanel({
   ticker,
   period,
@@ -1075,6 +1360,8 @@ function ChartPanel({
   data,
   indicators,
   mlSeries,
+  macroOverlay,
+  macroOverlayLabel,
   error,
   darkMode,
   kpi,
@@ -1088,10 +1375,14 @@ function ChartPanel({
   const overlaysRef = useRef({})
   const indicatorSeriesRef = useRef({})
   const mlSeriesRef = useRef(null)
+  const macroOverlayRef = useRef(null)
   const [activeOverlays, setActiveOverlays] = useState(() => new Set(['MA50']))
-  const [activeIndicators, setActiveIndicators] = useState(() => new Set(['rsi', 'macd']))
+  const [leftIndicator, setLeftIndicator] = useState('rsi')
+  const [rightIndicator, setRightIndicator] = useState('macd')
   const [chartType, setChartType] = useState('candles')
   const [patternsActive, setPatternsActive] = useState(false)
+  const [macroOverlayActive, setMacroOverlayActive] = useState(false)
+  const [indicatorChartReady, setIndicatorChartReady] = useState(false)
   const [overlayMenuOpen, setOverlayMenuOpen] = useState(false)
   const overlayMenuRef = useRef(null)
   const barSpacing = useMemo(() => getBarSpacing(period, intervalOverride), [period, intervalOverride])
@@ -1317,6 +1608,7 @@ function ChartPanel({
     indicatorChart.applyOptions({ watermark: { visible: false, color: 'transparent', text: '' } })
     indicatorSeriesRef.current = {}
     indicatorChartRef.current = indicatorChart
+    setIndicatorChartReady(true)
 
     const mainScale = chart.timeScale()
     const indicatorScale = indicatorChart.timeScale()
@@ -1365,6 +1657,7 @@ function ChartPanel({
       indicatorChart.remove()
       indicatorChartRef.current = null
       indicatorSeriesRef.current = {}
+      setIndicatorChartReady(false)
     }
   }, [darkMode, theme, zeroBasedAutoscaleProvider, chartType])
 
@@ -1470,7 +1763,43 @@ function ChartPanel({
   }, [mlSeries, data, chartType])
 
   useEffect(() => {
-    if (!indicatorChartRef.current) return
+    if (!chartRef.current) return
+    const timeScale = chartRef.current.chart.timeScale()
+    const visibleRange = timeScale.getVisibleLogicalRange()
+    if (macroOverlayRef.current) {
+      chartRef.current.chart.removeSeries(macroOverlayRef.current)
+      macroOverlayRef.current = null
+    }
+    if (!macroOverlayActive || !macroOverlay?.length) return
+    const candleStart = data?.candles?.[0]?.time
+    const candleEnd = data?.candles?.[data.candles.length - 1]?.time
+    const overlayData =
+      candleStart && candleEnd
+        ? macroOverlay.filter((point) => point.time >= candleStart && point.time <= candleEnd)
+        : macroOverlay
+    if (!overlayData.length) return
+    macroOverlayRef.current = chartRef.current.chart.addLineSeries({
+      color: '#f97316',
+      lineWidth: 2,
+      priceScaleId: 'macro',
+      priceLineVisible: false,
+      lastValueVisible: true,
+    })
+    chartRef.current.chart.priceScale('macro')?.applyOptions({
+      scaleMargins: { top: 0.15, bottom: 0.15 },
+      borderColor: theme.border,
+      visible: true,
+      ticksVisible: true,
+      minimumWidth: PRICE_SCALE_WIDTH,
+    })
+    macroOverlayRef.current.setData(overlayData)
+    if (visibleRange) {
+      timeScale.setVisibleLogicalRange(visibleRange)
+    }
+  }, [macroOverlayActive, macroOverlay, theme, data?.candles])
+
+  useEffect(() => {
+    if (!indicatorChartRef.current || !indicatorChartReady) return
     if (!indicators?.Date?.length) {
       Object.values(indicatorSeriesRef.current).forEach((series) => {
         series.setData([])
@@ -1479,31 +1808,38 @@ function ChartPanel({
     }
     const chart = indicatorChartRef.current
     const nextIds = new Set()
+    const selections = [
+      { key: leftIndicator, scaleId: 'left' },
+      { key: rightIndicator, scaleId: 'right' },
+    ].filter((item) => item.key)
 
-    LOWER_INDICATORS.forEach((indicator) => {
-      if (!activeIndicators.has(indicator.key)) return
-      const scaleId = 'left'
+    const seen = new Set()
+    selections.forEach((selection) => {
+      if (seen.has(selection.key)) return
+      seen.add(selection.key)
+      const indicator = LOWER_INDICATORS.find((item) => item.key === selection.key)
+      if (!indicator) return
       indicator.series.forEach((seriesConfig, idx) => {
-        const seriesId = `${indicator.key}-${seriesConfig.key}-${idx}`
+        const seriesId = `${indicator.key}-${seriesConfig.key}-${idx}-${selection.scaleId}`
         nextIds.add(seriesId)
         if (!indicatorSeriesRef.current[seriesId]) {
           indicatorSeriesRef.current[seriesId] = chart.addLineSeries({
             color: seriesConfig.color || indicator.color || '#888',
             lineWidth: seriesConfig.lineWidth || 2,
-            priceScaleId: scaleId,
+            priceScaleId: selection.scaleId,
             priceFormat: {
               type: 'custom',
               formatter: formatCompactAxis,
             },
           })
-          chart.priceScale(scaleId)?.applyOptions({
-            scaleMargins: { top: 0.1, bottom: 0.1 },
-            borderColor: theme.border,
-            ticksVisible: true,
-            visible: true,
-            minimumWidth: PRICE_SCALE_WIDTH,
-          })
         }
+        chart.priceScale(selection.scaleId)?.applyOptions({
+          scaleMargins: { top: 0.1, bottom: 0.1 },
+          borderColor: theme.border,
+          ticksVisible: true,
+          visible: true,
+          minimumWidth: PRICE_SCALE_WIDTH,
+        })
         const seriesData = buildOverlaySeries(indicators, seriesConfig.key)
         indicatorSeriesRef.current[seriesId].setData(seriesData)
       })
@@ -1515,7 +1851,7 @@ function ChartPanel({
         delete indicatorSeriesRef.current[seriesId]
       }
     })
-  }, [activeIndicators, indicators, theme, chartType])
+  }, [leftIndicator, rightIndicator, indicators, theme, chartType, indicatorChartReady])
 
   const companyName = kpi?.companyName || '—'
   const exchange = kpi?.exchange || ''
@@ -1530,7 +1866,22 @@ function ChartPanel({
   const priceTrendClass =
     priceSummary?.change == null ? '' : priceSummary.change >= 0 ? 'price-up' : 'price-down'
 
-  const overlaySummary = activeOverlays.size ? `${activeOverlays.size} selected` : 'None selected'
+  const legendItems = useMemo(() => {
+    const items = []
+    activeOverlays.forEach((key) => {
+      const overlay = PRICE_OVERLAYS.find((item) => item.key === key)
+      if (overlay) {
+        items.push({ key: overlay.key, label: overlay.label, color: overlay.color || '#888' })
+      }
+    })
+    if (macroOverlayActive && macroOverlay?.length) {
+      items.push({ key: 'macro-overlay', label: macroOverlayLabel || 'Macro overlay', color: '#f97316' })
+    }
+    if (mlSeries?.length) {
+      items.push({ key: 'ml-forecast', label: 'ML forecast', color: '#aa00ff' })
+    }
+    return items
+  }, [activeOverlays, macroOverlayActive, macroOverlay, macroOverlayLabel, mlSeries])
 
   return (
     <section className="panel chart-panel">
@@ -1569,33 +1920,30 @@ function ChartPanel({
               </button>
             ))}
           </div>
-          <div className="interval-select">
-            <label>
-              Candle interval
-              <select
-                value={intervalOverride ?? ''}
-                onChange={(e) => onIntervalChange(e.target.value ? e.target.value : null)}
-              >
-                {CANDLE_INTERVALS.map((item) => (
-                  <option key={item.key} value={item.value ?? ''}>
-                    {item.value ? item.label : `Auto (${baseIntervalLabel})`}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="chart-type-toggle">
-            {CHART_TYPES.map((type) => (
-              <button
-                key={type.key}
-                type="button"
-                className={type.key === chartType ? 'active' : ''}
-                onClick={() => setChartType(type.key)}
-              >
-                {type.label}
-              </button>
-            ))}
-          </div>
+          <MenuSelect
+            label="Interval"
+            valueLabel={
+              intervalOverride
+                ? CANDLE_INTERVALS.find((item) => item.value === intervalOverride)?.label
+                : `Auto (${baseIntervalLabel})`
+            }
+            options={CANDLE_INTERVALS.map((item) => ({
+              value: item.value ?? '',
+              label: item.value ? item.label : `Auto (${baseIntervalLabel})`,
+            }))}
+            selectedValue={intervalOverride ?? ''}
+            onSelect={(value) => onIntervalChange(value ? value : null)}
+          />
+          <MenuSelect
+            label="Chart"
+            valueLabel={CHART_TYPES.find((type) => type.key === chartType)?.label}
+            options={CHART_TYPES.map((type) => ({
+              value: type.key,
+              label: type.label,
+            }))}
+            selectedValue={chartType}
+            onSelect={(value) => setChartType(value)}
+          />
         </div>
       </div>
       <div className="chart-toolbar">
@@ -1606,7 +1954,6 @@ function ChartPanel({
             onClick={() => setOverlayMenuOpen((prev) => !prev)}
           >
             Price overlays
-            <span className="dropdown-summary">{overlaySummary}</span>
           </button>
           {overlayMenuOpen && (
             <div className="dropdown-panel">
@@ -1640,32 +1987,66 @@ function ChartPanel({
         >
           Patterns
         </button>
+        <button
+          type="button"
+          className={`secondary-btn ${macroOverlayActive ? 'active' : ''}`}
+          onClick={() => setMacroOverlayActive((prev) => !prev)}
+          disabled={!macroOverlay?.length}
+          title={macroOverlayLabel ? `Overlay: ${macroOverlayLabel}` : 'Macro overlay'}
+        >
+          Macro Overlay
+        </button>
       </div>
       {error && <div className="panel-error">{error}</div>}
       {!error && (!data.candles || data.candles.length === 0) && (
         <div className="panel-error">No data available for {ticker} in period {period}.</div>
       )}
-      <div className="chart-container" ref={containerRef} />
+      <div className="chart-container" ref={containerRef}>
+        {legendItems.length > 0 && (
+          <div className="chart-legend">
+            {legendItems.map((item) => (
+              <div className="legend-item" key={item.key}>
+                <span className="legend-swatch" style={{ backgroundColor: item.color }} />
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="chart-controls">
         <div className="overlay-controls">
           <span className="control-label">Lower indicators:</span>
-          {LOWER_INDICATORS.map((indicator) => (
-            <label key={indicator.key}>
-              <input
-                type="checkbox"
-                checked={activeIndicators.has(indicator.key)}
-                onChange={() =>
-                  setActiveIndicators((prev) => {
-                    const next = new Set(prev)
-                    if (next.has(indicator.key)) next.delete(indicator.key)
-                    else next.add(indicator.key)
-                    return next
-                  })
-                }
-              />
-              {indicator.label}
-            </label>
-          ))}
+          <MenuSelect
+            label="Left"
+            valueLabel={LOWER_INDICATORS.find((indicator) => indicator.key === leftIndicator)?.label || 'None'}
+            options={[
+              { value: '', label: 'None' },
+              ...LOWER_INDICATORS.map((indicator) => ({ value: indicator.key, label: indicator.label })),
+            ]}
+            selectedValue={leftIndicator}
+            onSelect={(value) => {
+              setLeftIndicator(value)
+              if (value && value === rightIndicator) {
+                setRightIndicator('')
+              }
+            }}
+          />
+          <MenuSelect
+            label="Right"
+            valueLabel={LOWER_INDICATORS.find((indicator) => indicator.key === rightIndicator)?.label || 'None'}
+            options={[
+              { value: '', label: 'None' },
+              ...LOWER_INDICATORS.map((indicator) => ({ value: indicator.key, label: indicator.label })),
+            ]}
+            selectedValue={rightIndicator}
+            onSelect={(value) => {
+              setRightIndicator(value)
+              if (value && value === leftIndicator) {
+                setLeftIndicator('')
+              }
+            }}
+            alignRight
+          />
         </div>
       </div>
       <div className="indicator-chart" ref={indicatorContainerRef} />
@@ -1813,14 +2194,201 @@ function KpiTable({ kpi }) {
   )
 }
 
-function MlControls({ models, loading, error, onRun, ticker }) {
+function MacroPanel({
+  seriesOptions,
+  selectedKey,
+  onSelectKey,
+  data,
+  stockCandles,
+  loading,
+  error,
+  darkMode,
+  ticker,
+}) {
+  const containerRef = useRef(null)
+  const chartRef = useRef(null)
+  const seriesRef = useRef({ stock: null, macro: null })
+
+  const selectedSpec = useMemo(
+    () => seriesOptions.find((item) => item.key === selectedKey),
+    [seriesOptions, selectedKey],
+  )
+  const macroScale = useMemo(() => {
+    const transform = selectedSpec?.transform
+    return transform === 'pct_change' || transform === 'yoy' ? 100 : 1
+  }, [selectedSpec])
+  const macroSuffix = macroScale === 100 ? '%' : ''
+
+  const stockSeries = useMemo(() => {
+    if (!stockCandles?.length) return []
+    const base = stockCandles[0]?.close
+    if (!base) return []
+    return stockCandles.map((candle) => ({
+      time: candle.time,
+      value: (candle.close / base) * 100,
+    }))
+  }, [stockCandles])
+
+  const macroSeries = useMemo(() => {
+    if (!data?.Date?.length || !selectedKey) return []
+    const values = data[selectedKey] || []
+    return data.Date.map((date, idx) => {
+      const raw = values[idx]
+      if (raw === null || raw === undefined || Number.isNaN(raw)) return null
+      return {
+        time: Math.floor(new Date(date).getTime() / 1000),
+        value: raw * macroScale,
+      }
+    }).filter(Boolean)
+  }, [data, selectedKey, macroScale])
+
+  const macroFiltered = useMemo(() => {
+    if (!stockCandles?.length) return macroSeries
+    const start = stockCandles[0].time
+    const end = stockCandles[stockCandles.length - 1].time
+    return macroSeries.filter((point) => point.time >= start && point.time <= end)
+  }, [macroSeries, stockCandles])
+
+  useEffect(() => {
+    if (!containerRef.current) return
+    const theme = darkMode
+      ? { bg: '#0f172a', grid: '#24304a', text: '#e2e8f0', border: '#2c3a55' }
+      : { bg: '#fff', grid: '#f0f3fa', text: '#222', border: '#d1d4dc' }
+
+    const chart = createChart(containerRef.current, {
+      width: containerRef.current.clientWidth,
+      height: 240,
+      layout: { background: { type: 'solid', color: theme.bg }, textColor: theme.text },
+      grid: { vertLines: { color: theme.grid }, horzLines: { color: theme.grid } },
+      timeScale: { borderColor: theme.border, visible: true, rightOffset: 2 },
+      rightPriceScale: { borderColor: theme.border, visible: true },
+      leftPriceScale: { borderColor: theme.border, visible: true },
+      crosshair: { mode: 1 },
+      handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
+      handleScale: { axisPressedMouseMove: true, mouseWheel: true, pinch: true },
+    })
+
+    const stock = chart.addLineSeries({
+      color: '#2563eb',
+      lineWidth: 2,
+      priceScaleId: 'left',
+      priceLineVisible: false,
+      lastValueVisible: true,
+    })
+    const macro = chart.addLineSeries({
+      color: '#f97316',
+      lineWidth: 2,
+      priceScaleId: 'right',
+      priceLineVisible: false,
+      lastValueVisible: true,
+    })
+
+    chartRef.current = chart
+    seriesRef.current = { stock, macro }
+
+    const observer = new ResizeObserver(() => {
+      if (containerRef.current) {
+        chart.applyOptions({ width: containerRef.current.clientWidth })
+      }
+    })
+    observer.observe(containerRef.current)
+
+    return () => {
+      observer.disconnect()
+      chart.remove()
+      chartRef.current = null
+      seriesRef.current = { stock: null, macro: null }
+    }
+  }, [darkMode])
+
+  useEffect(() => {
+    if (!chartRef.current) return
+    if (seriesRef.current.stock) {
+      seriesRef.current.stock.setData(stockSeries)
+    }
+    if (seriesRef.current.macro) {
+      seriesRef.current.macro.setData(macroFiltered)
+    }
+    chartRef.current.timeScale().fitContent()
+  }, [stockSeries, macroFiltered])
+
+  const lastMacro = macroFiltered?.[macroFiltered.length - 1]?.value ?? null
+  const lastMacroDate = macroFiltered?.[macroFiltered.length - 1]?.time ?? null
+  const lastStock = stockSeries?.[stockSeries.length - 1]?.value ?? null
+
+  const formatMacroValue = (value) => {
+    if (value == null || Number.isNaN(value)) return '—'
+    if (macroScale === 100) return `${value.toFixed(2)}${macroSuffix}`
+    return formatNumber(value)
+  }
+
+  return (
+    <section className="panel macro-panel">
+      <div className="panel-header">
+        <div>
+          <h3>Macro Comparison</h3>
+          <p className="panel-subtitle">Stock indexed to 100 vs selected macro series.</p>
+        </div>
+        <div className="macro-controls">
+          <label>
+            Macro series
+            <select value={selectedKey} onChange={(e) => onSelectKey(e.target.value)}>
+              {seriesOptions.map((option) => (
+                <option key={option.key} value={option.key}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="macro-meta">
+        <span className="macro-legend">
+          <span className="legend-dot stock" />
+          {ticker ? `${ticker} (indexed)` : 'Stock (indexed)'} {lastStock != null ? formatNumber(lastStock) : ''}
+        </span>
+        <span className="macro-legend">
+          <span className="legend-dot macro" />
+          {selectedSpec?.label || 'Macro'} {lastMacro != null ? formatMacroValue(lastMacro) : ''}
+        </span>
+        {lastMacroDate && (
+          <span className="macro-date">As of {new Date(lastMacroDate * 1000).toLocaleDateString()}</span>
+        )}
+      </div>
+
+      <div className="macro-chart" ref={containerRef} />
+
+      {loading && <div className="panel-subtitle">Loading macro data…</div>}
+      {error && <div className="panel-error">{error}</div>}
+      {!loading && !error && !macroFiltered.length && (
+        <div className="panel-subtitle">No macro data available for this range yet.</div>
+      )}
+    </section>
+  )
+}
+
+function MlControls({
+  models,
+  loading,
+  error,
+  onRun,
+  ticker,
+  metrics,
+  validation,
+  modelUsed,
+  requestedModel,
+  autoRetrained,
+  search,
+  cached,
+}) {
   const [model, setModel] = useState(models[0] || 'XGBoost')
   const [days, setDays] = useState(20)
   const [arimaOrder, setArimaOrder] = useState('5,1,0')
   const [features, setFeatures] = useState(() => {
     const initial = {}
     ML_FEATURES.forEach((f) => {
-      initial[f.key] = true
+      initial[f.key] = f.defaultOn ?? true
     })
     return initial
   })
@@ -1885,19 +2453,81 @@ function MlControls({ models, loading, error, onRun, ticker }) {
         ))}
       </div>
       {error && <div className="panel-error">{error}</div>}
-      <button
-        className="primary-btn"
-        disabled={loading}
-        onClick={() => {
-          if (model !== 'ARIMA' && !Object.values(features).some(Boolean)) {
-            alert('Select at least one feature')
-            return
-          }
-          onRun({ model, days, features, arimaOrder })
-        }}
-      >
-        {loading ? 'Running…' : `Run ML for ${ticker}`}
-      </button>
+      {metrics?.model && metrics?.baseline_last && (
+        <div className="ml-metrics">
+          <div className="metrics-header">
+            <span>Walk-forward ({metrics.test_days}d)</span>
+            <span className={`metrics-badge ${metrics.model.rmse < metrics.baseline_last.rmse ? 'good' : 'bad'}`}>
+              {metrics.model.rmse < metrics.baseline_last.rmse ? 'Beats baseline' : 'Below baseline'}
+            </span>
+          </div>
+          {modelUsed && (
+            <div className="metrics-subtitle">
+              Model: {modelUsed}
+              {requestedModel && requestedModel !== modelUsed ? ` (requested ${requestedModel})` : ''}
+              {autoRetrained ? ' · auto-retrained' : ''}
+              {cached ? ' · cached' : ''}
+            </div>
+          )}
+          {search?.searched && (
+            <div className="metrics-subtitle">
+              Auto-tune: {search.candidates} candidates ({search.model})
+            </div>
+          )}
+          <div className="metrics-grid">
+            <div className="metrics-card">
+              <strong>Model</strong>
+              <span>MAE: {formatNumber(metrics.model.mae)}</span>
+              <span>RMSE: {formatNumber(metrics.model.rmse)}</span>
+              <span>sMAPE: {formatNumber(metrics.model.smape)}%</span>
+              <span>R²: {formatNumber(metrics.model.r2)}</span>
+              <span>N: {metrics.model.n}</span>
+            </div>
+            <div className="metrics-card">
+              <strong>Baseline (Last Close)</strong>
+              <span>MAE: {formatNumber(metrics.baseline_last.mae)}</span>
+              <span>RMSE: {formatNumber(metrics.baseline_last.rmse)}</span>
+              <span>sMAPE: {formatNumber(metrics.baseline_last.smape)}%</span>
+              <span>R²: {formatNumber(metrics.baseline_last.r2)}</span>
+              <span>N: {metrics.baseline_last.n}</span>
+            </div>
+          </div>
+          {validation?.note && (
+            <div className={`metrics-note ${validation.passed ? 'good' : 'bad'}`}>
+              {validation.note}
+            </div>
+          )}
+          <div className="metrics-note">Lower is better. Baseline uses previous close as the forecast.</div>
+        </div>
+      )}
+      <div className="ml-actions">
+        <button
+          className="secondary-btn"
+          disabled={loading}
+          onClick={() => {
+            if (model !== 'ARIMA' && !Object.values(features).some(Boolean)) {
+              alert('Select at least one feature')
+              return
+            }
+            onRun({ model, days, features, arimaOrder, refresh: true })
+          }}
+        >
+          {loading ? 'Refreshing…' : 'Refresh ML'}
+        </button>
+        <button
+          className="primary-btn"
+          disabled={loading}
+          onClick={() => {
+            if (model !== 'ARIMA' && !Object.values(features).some(Boolean)) {
+              alert('Select at least one feature')
+              return
+            }
+            onRun({ model, days, features, arimaOrder })
+          }}
+        >
+          {loading ? 'Running…' : `Run ML for ${ticker}`}
+        </button>
+      </div>
     </section>
   )
 }

@@ -3,9 +3,12 @@
 import json
 import time
 import traceback
+import threading
 from pathlib import Path
 
 import requests
+import pandas as pd
+import math
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +27,8 @@ from backend.tools import (
     download_prices,
     get_sp500_screener,
 )
-from backend.ml import get_available_models, run_ml_model
+from backend.ml import get_available_models, run_ml_model, start_ml_cache_scheduler
+from backend.macro import get_macro_feature_specs, get_macro_frame, warm_macro_cache
 
 
 app = FastAPI()
@@ -38,6 +42,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.on_event("startup")
+def _warm_macro_data():
+    threading.Thread(target=warm_macro_cache, daemon=True).start()
+    threading.Thread(target=start_ml_cache_scheduler, daemon=True).start()
+
 # Global store for indicator data
 INDICATOR_DATA_STORE = {}
 NEWS_CACHE_TTL = 300
@@ -47,6 +57,10 @@ AUTOCOMPLETE_CACHE: dict[str, tuple[float, dict]] = {}
 
 
 class WatchlistBatchRequest(BaseModel):
+    tickers: list[str]
+
+
+class WatchlistConfigRequest(BaseModel):
     tickers: list[str]
 
 
@@ -251,10 +265,93 @@ def watchlist_data_batch(payload: WatchlistBatchRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/config/watchlist")
+def get_watchlist_config():
+    config_path = Path(__file__).resolve().parent / "config.json"
+    if not config_path.exists():
+        return {"watchlist": []}
+    try:
+        payload = json.loads(config_path.read_text())
+        watchlist = payload.get("watchlist") or []
+        return {"watchlist": watchlist}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/config/watchlist")
+def set_watchlist_config(payload: WatchlistConfigRequest):
+    config_path = Path(__file__).resolve().parent / "config.json"
+    watchlist = [str(t).upper() for t in (payload.tickers or []) if str(t).strip()]
+    try:
+        if config_path.exists():
+            data = json.loads(config_path.read_text())
+        else:
+            data = {}
+        data["watchlist"] = watchlist
+        config_path.write_text(json.dumps(data, indent=2))
+        return {"watchlist": watchlist}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/screener/sp500")
 def sp500_screener(metric: str = "freeCashflow", order: str = "desc", limit: int = 20, refresh: bool = False):
     try:
         return get_sp500_screener(metric=metric, order=order, limit=limit, refresh=refresh)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/macro/series")
+def macro_series():
+    return {"series": get_macro_feature_specs()}
+
+
+@app.get("/macro/data")
+def macro_data(start: str | None = None, end: str | None = None, keys: str | None = None, refresh: bool = False):
+    try:
+        df = get_macro_frame(force=refresh)
+        if df.empty:
+            return {"data": {}}
+        if keys:
+            requested = [k.strip() for k in keys.split(",") if k.strip()]
+            if requested:
+                df = df[[k for k in requested if k in df.columns]]
+                if df.empty and not refresh:
+                    df = get_macro_frame(force=True)
+                    df = df[[k for k in requested if k in df.columns]]
+        if start:
+            start_dt = pd.to_datetime(start, errors="coerce")
+            if pd.notnull(start_dt):
+                df = df[df.index >= start_dt]
+        if end:
+            end_dt = pd.to_datetime(end, errors="coerce")
+            if pd.notnull(end_dt):
+                df = df[df.index <= end_dt]
+        if df.empty:
+            return {"data": {}}
+        df = df.replace([float("inf"), float("-inf")], pd.NA)
+        df = df.where(pd.notnull(df), None)
+        payload = {"Date": df.index.astype(str).tolist()}
+
+        def _clean_list(values: list):
+            cleaned = []
+            for val in values:
+                if val is None:
+                    cleaned.append(None)
+                elif isinstance(val, (float, int)):
+                    if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+                        cleaned.append(None)
+                    else:
+                        cleaned.append(float(val))
+                else:
+                    cleaned.append(val)
+            return cleaned
+
+        for col in df.columns:
+            payload[col] = _clean_list(df[col].tolist())
+        return {"data": payload}
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -316,6 +413,7 @@ def ml_predictions(
     arima_order: str = "5,1,0",
     scaler_type: str = "standard",
     features: str | None = None,
+    refresh: bool = False,
 ):
     # Normalize inputs for yfinance
     period = (period or "").lower().strip()
@@ -364,6 +462,7 @@ def ml_predictions(
                 arima_order=order,
                 scaler_type=scaler_type,
                 feature_flags=flags,
+                use_cache=not refresh,
             )
         except YFRateLimitError:
             if attempt < max_retries - 1:

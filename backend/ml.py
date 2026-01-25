@@ -1,6 +1,9 @@
 # backend/ml.py
 
 from pathlib import Path
+import json
+import time
+from threading import Lock
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
@@ -8,10 +11,241 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import GradientBoostingRegressor
 from xgboost import XGBRegressor
-from backend.tools import download_prices
+from backend.tools import download_prices, get_extended_period, _cooldown_active, _cooldown_remaining_seconds
+from yfinance.exceptions import YFRateLimitError
+from backend.macro import align_macro_to_index
 
 OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+AUTO_MODEL_POOL = ["XGBoost", "RandomForest", "GBR"]
+ML_QUALITY_MIN_R2 = 0.05
+ML_QUALITY_MIN_IMPROVEMENT = 0.01  # 1% better than baseline RMSE
+
+ML_CACHE_TTL = 60 * 60 * 24
+ML_CACHE: dict[tuple, tuple[float, dict]] = {}
+ML_CACHE_LOCK = Lock()
+
+DEFAULT_FEATURE_FLAGS = {
+    "ma50": True,
+    "ma100": False,
+    "ma150": True,
+    "ma200": False,
+    "ema50": False,
+    "bollinger": True,
+    "rsi": True,
+    "obv": True,
+    "atr": False,
+    "macd": True,
+    "volatility": False,
+    "momentum": True,
+    "sp500_ret": False,
+    "fed_funds": False,
+    "dgs10": False,
+    "dgs2": False,
+    "yield_curve_10y_2y": False,
+    "cpi_yoy": False,
+    "pce_yoy": False,
+    "vix_ret": False,
+    "wti_ret": False,
+    "usd_ret": False,
+    "gold_ret": False,
+    "silver_ret": False,
+}
+
+def _regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    if y_true.size == 0:
+        return {}
+    mae = float(np.mean(np.abs(y_true - y_pred)))
+    rmse = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+    ss_res = float(np.sum((y_true - y_pred) ** 2))
+    ss_tot = float(np.sum((y_true - np.mean(y_true)) ** 2))
+    r2 = 0.0 if ss_tot == 0 else 1 - (ss_res / ss_tot)
+    denom = np.abs(y_true) + np.abs(y_pred)
+    smape = float(np.mean(np.where(denom == 0, 0.0, 2 * np.abs(y_pred - y_true) / denom)) * 100.0)
+    return {"mae": mae, "rmse": rmse, "smape": smape, "r2": r2, "n": int(y_true.size)}
+
+
+def _build_validation(metrics: dict | None) -> dict | None:
+    if not metrics or "model" not in metrics or "baseline_last" not in metrics:
+        return None
+    model = metrics["model"] or {}
+    baseline = metrics["baseline_last"] or {}
+    model_rmse = model.get("rmse")
+    baseline_rmse = baseline.get("rmse")
+    model_r2 = model.get("r2")
+    threshold_rmse = None
+    improvement_pct = None
+    passed = True
+    messages = []
+
+    if isinstance(baseline_rmse, (int, float)) and baseline_rmse:
+        threshold_rmse = baseline_rmse * (1 - ML_QUALITY_MIN_IMPROVEMENT)
+        if isinstance(model_rmse, (int, float)):
+            improvement_pct = (baseline_rmse - model_rmse) / baseline_rmse * 100.0
+            if model_rmse <= threshold_rmse:
+                messages.append(
+                    f"RMSE {model_rmse:.4f} meets threshold {threshold_rmse:.4f} (baseline {baseline_rmse:.4f})."
+                )
+            else:
+                passed = False
+                messages.append(
+                    f"RMSE {model_rmse:.4f} not below threshold {threshold_rmse:.4f} (baseline {baseline_rmse:.4f})."
+                )
+
+    if isinstance(model_r2, (int, float)):
+        if model_r2 >= ML_QUALITY_MIN_R2:
+            messages.append(f"R² {model_r2:.3f} meets threshold {ML_QUALITY_MIN_R2:.2f}.")
+        else:
+            passed = False
+            messages.append(f"R² {model_r2:.3f} below threshold {ML_QUALITY_MIN_R2:.2f}.")
+
+    return {
+        "passed": passed,
+        "metric": "rmse",
+        "score": model_rmse,
+        "baseline": baseline_rmse,
+        "threshold": threshold_rmse,
+        "improvement_pct": improvement_pct,
+        "r2": model_r2,
+        "r2_threshold": ML_QUALITY_MIN_R2,
+        "note": " ".join(messages).strip(),
+    }
+
+
+def _param_grid(model_type: str) -> list[dict]:
+    if model_type == "XGBoost":
+        return [
+            {"n_estimators": 200, "max_depth": 3, "learning_rate": 0.05, "subsample": 0.8, "colsample_bytree": 0.8},
+            {"n_estimators": 300, "max_depth": 4, "learning_rate": 0.05, "subsample": 0.8, "colsample_bytree": 0.8},
+            {"n_estimators": 200, "max_depth": 5, "learning_rate": 0.1, "subsample": 0.9, "colsample_bytree": 0.9},
+        ]
+    if model_type == "RandomForest":
+        return [
+            {"n_estimators": 200, "max_depth": None, "min_samples_leaf": 1, "max_features": "sqrt"},
+            {"n_estimators": 300, "max_depth": 10, "min_samples_leaf": 2, "max_features": "sqrt"},
+            {"n_estimators": 300, "max_depth": 16, "min_samples_leaf": 3, "max_features": "sqrt"},
+        ]
+    if model_type == "GBR":
+        return [
+            {"n_estimators": 200, "learning_rate": 0.05, "max_depth": 2},
+            {"n_estimators": 300, "learning_rate": 0.05, "max_depth": 3},
+            {"n_estimators": 200, "learning_rate": 0.1, "max_depth": 3},
+        ]
+    return [{}]
+
+
+def _cache_key(
+    ticker: str,
+    period: str,
+    interval: str,
+    model_type: str,
+    pre_days: int,
+    test_days: int,
+    ma1: int,
+    ma2: int,
+    ema1: int,
+    arima_order: tuple[int, int, int],
+    scaler_type: str,
+    feature_flags: dict,
+) -> tuple:
+    flags = tuple(sorted((k, bool(v)) for k, v in (feature_flags or {}).items()))
+    return (
+        ticker.upper(),
+        period,
+        interval,
+        model_type,
+        pre_days,
+        test_days,
+        ma1,
+        ma2,
+        ema1,
+        arima_order,
+        scaler_type,
+        flags,
+    )
+
+
+def _cache_get(key: tuple) -> dict | None:
+    with ML_CACHE_LOCK:
+        entry = ML_CACHE.get(key)
+        if not entry:
+            return None
+        ts, payload = entry
+        if time.time() - ts < ML_CACHE_TTL:
+            return payload
+        return None
+
+
+def _cache_set(key: tuple, payload: dict):
+    with ML_CACHE_LOCK:
+        ML_CACHE[key] = (time.time(), payload)
+
+
+def _load_watchlist_config() -> list[str]:
+    config_path = Path(__file__).resolve().parent / "config.json"
+    if not config_path.exists():
+        return []
+    try:
+        payload = json.loads(config_path.read_text())
+        watchlist = payload.get("watchlist") or []
+        return [str(item).upper() for item in watchlist if item]
+    except Exception:
+        return []
+
+
+def warm_ml_cache_for_watchlist(
+    period: str = "1y",
+    interval: str = "1d",
+    model_type: str = "XGBoost",
+    pre_days: int = 20,
+    test_days: int = 10,
+    ma1: int = 50,
+    ma2: int = 150,
+    ema1: int = 50,
+    scaler_type: str = "standard",
+):
+    tickers = _load_watchlist_config()
+    if not tickers:
+        return
+    yf_period = get_extended_period(period, interval)
+    for ticker in tickers:
+        if _cooldown_active():
+            time.sleep(max(30, _cooldown_remaining_seconds()))
+            break
+        try:
+            run_ml_model(
+                ticker=ticker,
+                period=yf_period,
+                interval=interval,
+                model_type=model_type,
+                pre_days=pre_days,
+                test_days=test_days,
+                ma1=ma1,
+                ma2=ma2,
+                ema1=ema1,
+                arima_order=(5, 1, 0),
+                scaler_type=scaler_type,
+                feature_flags=DEFAULT_FEATURE_FLAGS,
+                use_cache=False,
+            )
+        except YFRateLimitError:
+            time.sleep(60)
+            continue
+        except Exception:
+            continue
+        time.sleep(2)
+
+
+def start_ml_cache_scheduler(interval_seconds: int = 60 * 60 * 24):
+    while True:
+        try:
+            warm_ml_cache_for_watchlist()
+        except Exception:
+            pass
+        time.sleep(interval_seconds)
 
 
 class StockPredictionModel:
@@ -32,6 +266,8 @@ class StockPredictionModel:
         ma2,
         ema1,
         arima_order,
+        price_data=None,
+        model_params=None,
     ):
         """Initialize the StockPredictionModel with parameters and load data."""
         self.ticker = ticker
@@ -45,22 +281,36 @@ class StockPredictionModel:
         self.model_type = model_type
         self.zoom = zoom
         self.start = start
+        self.model_params = model_params or {}
         self.scaler = self.get_scaler_type()
         self.model = self.get_model_type()
         self.ma1 = ma1
         self.ma2 = ma2
         self.ema1 = ema1
-        # The day where all features available
+        # The day where all features available (respect toggled long-window features)
         self.feature_start = max(ma1, ma2, ema1)
+        if self.feature_flags and self.feature_flags.get("ma100", True):
+            self.feature_start = max(self.feature_start, 100)
+        if self.feature_flags and self.feature_flags.get("ma200", True):
+            self.feature_start = max(self.feature_start, 200)
         self.arima_order = arima_order
+        self.feature_keys: list[str] = []
 
         # Load and prepare the data
-        (
-            self.real_prices,
-            self.real_high_prices,
-            self.real_low_prices,
-            self.real_volumes,
-        ) = self.load_data()
+        if price_data is not None:
+            (
+                self.real_prices,
+                self.real_high_prices,
+                self.real_low_prices,
+                self.real_volumes,
+            ) = price_data
+        else:
+            (
+                self.real_prices,
+                self.real_high_prices,
+                self.real_low_prices,
+                self.real_volumes,
+            ) = self.load_data()
 
         # Compute features based on the loaded data
         self.evaluate_all_features()
@@ -249,7 +499,9 @@ class StockPredictionModel:
         # Define features and their computation methods
         features = {
             "ma50": lambda: self.compute_ma(prices, window=self.ma1),
+            "ma100": lambda: self.compute_ma(prices, window=100),
             "ma150": lambda: self.compute_ma(prices, window=self.ma2),
+            "ma200": lambda: self.compute_ma(prices, window=200),
             "ema50": lambda: self.compute_ema(prices, window=self.ema1),
             "momentum": lambda: self.compute_momentum(prices),
             "rsi": lambda: self.compute_rsi(prices),
@@ -264,6 +516,12 @@ class StockPredictionModel:
 
         # Compute features dynamically
         computed_features = {name: func() for name, func in features.items()}
+
+        # Add aligned macro features (lagged to reduce look-ahead bias)
+        macro_df = align_macro_to_index(prices.index, lag_days=1)
+        if not macro_df.empty:
+            for col in macro_df.columns:
+                computed_features[col] = macro_df[col]
 
         # Validate feature lengths
         lengths = {name: len(values)
@@ -280,6 +538,101 @@ class StockPredictionModel:
                 f"⚠️ Length mismatches found: {', '.join(mismatches)}")
 
         return computed_features
+
+    @staticmethod
+    def _feature_flag_groups() -> dict[str, list[str]]:
+        return {
+            "bollinger": ["upper_band", "lower_band"],
+            "macd": ["macd", "macd_signal"],
+        }
+
+    def _flag_for_feature(self, feature_key: str) -> str:
+        for flag, keys in self._feature_flag_groups().items():
+            if feature_key in keys:
+                return flag
+        return feature_key
+
+    def _is_feature_enabled(self, feature_key: str) -> bool:
+        if not self.feature_flags:
+            return True
+        flag_key = self._flag_for_feature(feature_key)
+        return bool(self.feature_flags.get(flag_key, True))
+
+    def _apply_feature_flags_to_matrix(self, X: np.ndarray, feature_keys: list[str]) -> np.ndarray:
+        if not self.feature_flags:
+            return X
+        X_weighted = X.copy()
+        for idx, feature_key in enumerate(feature_keys):
+            if not self._is_feature_enabled(feature_key):
+                X_weighted[:, idx] = 0
+        return X_weighted
+
+    def walk_forward_metrics(self, test_days: int) -> dict | None:
+        if test_days <= 0:
+            return None
+        if self.model_type == "ARIMA":
+            series = self.real_prices.dropna()
+            if len(series) <= test_days + 30:
+                return None
+            start_idx = len(series) - test_days
+            preds, actuals, baseline = [], [], []
+            for i in range(start_idx, len(series)):
+                train_series = series.iloc[:i]
+                model = None
+                try:
+                    from statsmodels.tsa.arima.model import ARIMA
+                    model = ARIMA(train_series, order=self.arima_order).fit()
+                    pred = float(model.forecast(steps=1).iloc[0])
+                except Exception:
+                    pred = float(train_series.iloc[-1])
+                preds.append(pred)
+                actuals.append(float(series.iloc[i]))
+                baseline.append(float(train_series.iloc[-1]))
+            return {
+                "test_days": test_days,
+                "model": _regression_metrics(np.array(actuals), np.array(preds)),
+                "baseline_last": _regression_metrics(np.array(actuals), np.array(baseline)),
+            }
+
+        features = self.evaluate_features(
+            prices=self.real_prices,
+            high_prices=self.real_high_prices,
+            low_prices=self.real_low_prices,
+            volumes=self.real_volumes,
+        )
+        feature_keys = list(features.keys())
+        feature_df = pd.concat(features, axis=1)
+        feature_df["target"] = self.real_prices.shift(-1)
+        feature_df["baseline"] = self.real_prices
+        feature_df = feature_df.dropna()
+        if len(feature_df) <= test_days + 30:
+            return None
+
+        start_idx = len(feature_df) - test_days
+        preds, actuals, baseline = [], [], []
+        for i in range(start_idx, len(feature_df)):
+            train_df = feature_df.iloc[:i]
+            test_row = feature_df.iloc[i:i + 1]
+            X_train = train_df[feature_keys].values
+            y_train = train_df["target"].values
+            X_test = test_row[feature_keys].values
+            scaler = self.get_scaler_type()
+            if scaler:
+                X_train = scaler.fit_transform(X_train)
+                X_test = scaler.transform(X_test)
+            X_train = self._apply_feature_flags_to_matrix(X_train, feature_keys)
+            X_test = self._apply_feature_flags_to_matrix(X_test, feature_keys)
+            model = self.get_model_type()
+            model.fit(X_train, y_train)
+            pred = float(model.predict(X_test)[0])
+            preds.append(pred)
+            actuals.append(float(test_row["target"].iloc[0]))
+            baseline.append(float(test_row["baseline"].iloc[0]))
+        return {
+            "test_days": test_days,
+            "model": _regression_metrics(np.array(actuals), np.array(preds)),
+            "baseline_last": _regression_metrics(np.array(actuals), np.array(baseline)),
+        }
 
     def build_model(self):
         """
@@ -298,7 +651,8 @@ class StockPredictionModel:
         )
 
         # Ensure all feature arrays are aligned
-        feature_values = np.array(list(features.values()))
+        self.feature_keys = list(features.keys())
+        feature_values = np.array([features[key] for key in self.feature_keys])
         if not all(len(arr) == feature_values.shape[1] for arr in feature_values):
             raise ValueError("Feature lengths are not aligned for training.")
 
@@ -308,6 +662,9 @@ class StockPredictionModel:
             feature_vector = feature_values[:, i]
             self.X_list.append(feature_vector)
             self.y_list.append(self.real_prices.iloc[i])
+
+        if not self.X_list:
+            raise ValueError("Not enough history to build the training set for selected features.")
 
         # Convert lists to NumPy arrays
         X = np.array(self.X_list)
@@ -328,8 +685,8 @@ class StockPredictionModel:
         # Apply feature weighting if feature_flags are provided
         if hasattr(self, "feature_flags") and self.feature_flags:
             X_weighted = X_scaled.copy()
-            for idx, feature_flag in enumerate(self.feature_flags.values()):
-                if not feature_flag:
+            for idx, feature_key in enumerate(self.feature_keys):
+                if not self._is_feature_enabled(feature_key):
                     X_weighted[:, idx] = 0
         else:
             X_weighted = X_scaled
@@ -385,14 +742,28 @@ class StockPredictionModel:
 
         return prices, high_prices, low_prices, volumes
 
+    def get_price_data(self):
+        return (
+            self.real_prices.copy(),
+            self.real_high_prices.copy(),
+            self.real_low_prices.copy(),
+            self.real_volumes.copy(),
+        )
+
     def recalculate_features(self, prices, high_prices, low_prices, volumes):
         """
         Recalculate features dynamically for the given data.
         """
         features = self.evaluate_features(
             prices, high_prices, low_prices, volumes)
-        feature_vector = np.array([values.iloc[-1]
-                                   for values in features.values()])
+        if self.feature_keys:
+            feature_vector = np.array(
+                [features[key].iloc[-1] for key in self.feature_keys]
+            )
+        else:
+            feature_vector = np.array(
+                [values.iloc[-1] for values in features.values()]
+            )
         return feature_vector
 
     def weight_last_feature(self, list, last_feature_vector):
@@ -411,8 +782,8 @@ class StockPredictionModel:
 
         print(f"X_scaled: {X_weighted}")
 
-        for idx, feature_flag in enumerate(self.feature_flags.values()):
-            if not feature_flag:
+        for idx, feature_key in enumerate(self.feature_keys):
+            if not self._is_feature_enabled(feature_key):
                 X_weighted[:, idx] = 0
 
         last_feature_vector = X_weighted[-1]
@@ -540,11 +911,17 @@ class StockPredictionModel:
     def get_model_type(self):
         """Returns the appropriate model based on user input."""
         if self.model_type == "XGBoost":
-            return XGBRegressor(random_state=self.seed)
+            params = {"random_state": self.seed}
+            params.update(self.model_params or {})
+            return XGBRegressor(**params)
         elif self.model_type == "RandomForest":
-            return RandomForestRegressor(random_state=self.seed)
+            params = {"random_state": self.seed}
+            params.update(self.model_params or {})
+            return RandomForestRegressor(**params)
         elif self.model_type == "GBR":
-            return GradientBoostingRegressor(random_state=self.seed)
+            params = {"random_state": self.seed}
+            params.update(self.model_params or {})
+            return GradientBoostingRegressor(**params)
         elif self.model_type == "LinearRegression":
             return LinearRegression()
         elif self.model_type == "ARIMA":
@@ -570,31 +947,127 @@ def run_ml_model(
     arima_order: tuple[int, int, int],
     scaler_type: str,
     feature_flags: dict,
+    use_cache: bool = True,
 ):
 
-    start_val = max(ma1, ma2, ema1)
-    m = StockPredictionModel(
-        ticker=ticker,
-        period=period,
-        interval=interval,
-        pre_days=pre_days,
-        test_days=test_days,
-        seed=42,
-        feature_flags=feature_flags,
-        scaler_type=scaler_type,
-        model_type=model_type,
-        zoom=pre_days,
-        start=start_val,
-        ma1=ma1,
-        ma2=ma2,
-        ema1=ema1,
-        arima_order=arima_order,
+    cache_key = _cache_key(
+        ticker,
+        period,
+        interval,
+        model_type,
+        pre_days,
+        test_days,
+        ma1,
+        ma2,
+        ema1,
+        arima_order,
+        scaler_type,
+        feature_flags,
     )
-    predictions = m.iterate_projections()
+    if use_cache:
+        cached = _cache_get(cache_key)
+        if cached:
+            return cached | {"cached": True}
 
-    return {
-        "projected": {
-            "Date":      predictions.index.astype(str).tolist(),
-            "Predicted": predictions.tolist()
-        }
+    def _train_model(selected_model: str, price_data=None, model_params: dict | None = None):
+        start_val = max(ma1, ma2, ema1)
+        model = StockPredictionModel(
+            ticker=ticker,
+            period=period,
+            interval=interval,
+            pre_days=pre_days,
+            test_days=test_days,
+            seed=42,
+            feature_flags=feature_flags,
+            scaler_type=scaler_type,
+            model_type=selected_model,
+            zoom=pre_days,
+            start=start_val,
+            ma1=ma1,
+            ma2=ma2,
+            ema1=ema1,
+            arima_order=arima_order,
+            price_data=price_data,
+            model_params=model_params,
+        )
+        preds = model.iterate_projections()
+        metrics = model.walk_forward_metrics(test_days=test_days)
+        validation = _build_validation(metrics)
+        return model, preds, metrics, validation
+
+    base_model, base_preds, base_metrics, base_validation = _train_model(model_type)
+    best = {
+        "model_type": model_type,
+        "model": base_model,
+        "preds": base_preds,
+        "metrics": base_metrics,
+        "validation": base_validation,
+        "params": None,
     }
+    auto_retrained = False
+    tuned = False
+    search_summary = None
+
+    if model_type != "ARIMA" and base_validation and not base_validation.get("passed", True):
+        price_data = base_model.get_price_data()
+        best_rmse = base_metrics.get("model", {}).get("rmse", float("inf")) if base_metrics else float("inf")
+        for candidate in AUTO_MODEL_POOL:
+            if candidate == model_type:
+                continue
+            grid = _param_grid(candidate)
+            total_candidates = len(grid)
+            local_best = None
+            local_best_rmse = float("inf")
+            local_best_metrics = None
+            local_best_validation = None
+            local_best_params = None
+            for params in grid:
+                try:
+                    cand_model, cand_preds, cand_metrics, cand_validation = _train_model(
+                        candidate, price_data=price_data, model_params=params
+                    )
+                except Exception:
+                    continue
+                cand_rmse = cand_metrics.get("model", {}).get("rmse", float("inf")) if cand_metrics else float("inf")
+                if cand_rmse < local_best_rmse:
+                    local_best_rmse = cand_rmse
+                    local_best = (cand_model, cand_preds)
+                    local_best_metrics = cand_metrics
+                    local_best_validation = cand_validation
+                    local_best_params = params
+            if local_best and local_best_rmse < best_rmse:
+                best_rmse = local_best_rmse
+                best = {
+                    "model_type": candidate,
+                    "model": local_best[0],
+                    "preds": local_best[1],
+                    "metrics": local_best_metrics,
+                    "validation": local_best_validation,
+                    "params": local_best_params,
+                }
+                auto_retrained = True
+                tuned = True
+                search_summary = {
+                    "searched": True,
+                    "model": candidate,
+                    "candidates": total_candidates,
+                    "best_params": local_best_params,
+                }
+
+    predictions = best["preds"]
+
+    payload = {
+        "projected": {
+            "Date": predictions.index.astype(str).tolist(),
+            "Predicted": predictions.tolist(),
+        },
+        "metrics": best["metrics"],
+        "validation": best["validation"],
+        "requested_model": model_type,
+        "model_used": best["model_type"],
+        "auto_retrained": auto_retrained,
+        "tuned": tuned,
+        "search": search_summary,
+    }
+    _cache_set(cache_key, payload)
+    return payload
