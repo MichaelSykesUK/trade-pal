@@ -899,6 +899,10 @@ class StockPredictionModel:
 
     def get_scaler_type(self):
         """Returns the appropriate scaler based on user input."""
+        if self.scaler_type == "auto":
+            if self.model_type in {"XGBoost", "RandomForest", "GBR", "ARIMA"}:
+                return None
+            return StandardScaler()
         if self.scaler_type == "minmax":
             return MinMaxScaler(feature_range=(-1, 1))
         elif self.scaler_type == "standard":

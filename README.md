@@ -12,18 +12,15 @@ TradePal is a full-stack financial analytics app that provides interactive stock
 
 ## 📦 Requirements
 
-- **Python 3.10+**
+- **Python 3.12+**
 - **Node.js 18+**
-- **Virtual environment** (Conda or `venv`) for the backend
+- **Poetry** (recommended for the backend)
 
 ## ⚙️ Setup Instructions
 
-### Backend
+### Backend (Poetry)
 ```bash
-conda env create -f backend/environment.yml
-conda activate tradepal
-# or: python -m venv .venv && source .venv/bin/activate
-pip install -r backend/requirements.txt
+poetry install
 ```
 
 ### Frontend (Vite)
@@ -39,16 +36,35 @@ VITE_API_BASE=https://your-api-host
 
 ## ▶️ Run the Application
 
-Run the backend (FastAPI) and frontend (Vite) in two terminals:
+Run the backend (FastAPI) and frontend (Vite) with one command:
 
 ```bash
-# Terminal 1
-conda activate tradepal  # or source your venv
-uvicorn backend.api:app --reload --port 8000
+chmod +x dev.sh
+./dev.sh
+```
 
-# Terminal 2
-cd frontend-vite
+Or use npm as a simple launcher from the repo root:
+```bash
 npm run dev
+```
+
+The dev script always uses `8000` (backend) and `5173` (frontend). If those
+ports are already in use, it will stop the existing processes first, then
+start fresh and wire the frontend to the backend automatically (forcing the
+frontend to bind on `127.0.0.1`).
+
+To do a quick health check (starts both servers, verifies they respond, opens
+the frontend and backend docs in your browser, then stops them), run:
+```bash
+npm run check
+```
+It prints progress while waiting and logs server output to
+`/tmp/tradepal-dev-check.log`.
+
+If you prefer two terminals, you can still run:
+```bash
+poetry run uvicorn backend.api:app --reload --port 8000
+cd frontend-vite && npm run dev
 ```
 
 - Backend API: `http://127.0.0.1:8000`

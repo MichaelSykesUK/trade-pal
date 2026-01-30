@@ -8,6 +8,10 @@ export default defineConfig(({ mode }) => {
     define: {
       __APP_ENV__: env.APP_ENV,
     },
+    test: {
+      environment: 'jsdom',
+      setupFiles: './src/test/setup.js',
+    },
     server: {
       port: 5173,
       open: true,

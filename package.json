@@ -1,0 +1,14 @@
+{
+  "name": "trade-pal",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "bash ./dev.sh",
+    "dev:backend": "poetry run uvicorn backend.api:app --reload --port 8000",
+    "dev:frontend": "npm --prefix frontend-vite run dev",
+    "check": "bash ./scripts/check.sh",
+    "dev:check": "npm run check",
+    "test": "npm --prefix frontend-vite test",
+    "test:watch": "npm --prefix frontend-vite run test:watch"
+  }
+}

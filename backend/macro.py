@@ -26,6 +26,20 @@ MACRO_SERIES = [
         "transform": "pct_change",
     },
     {
+        "key": "sp500_level",
+        "source": "fred",
+        "series_id": "SP500",
+        "label": "S&P 500 (Level)",
+        "transform": "level",
+    },
+    {
+        "key": "sp500_log",
+        "source": "fred",
+        "series_id": "SP500",
+        "label": "S&P 500 (Log)",
+        "transform": "log",
+    },
+    {
         "key": "fed_funds",
         "source": "fred",
         "series_id": "FEDFUNDS",
@@ -89,11 +103,39 @@ MACRO_SERIES = [
         "transform": "pct_change",
     },
     {
+        "key": "gold_level",
+        "source": "yahoo",
+        "ticker": "GLD",
+        "label": "Gold (GLD Level)",
+        "transform": "level",
+    },
+    {
+        "key": "gold_log",
+        "source": "yahoo",
+        "ticker": "GLD",
+        "label": "Gold (GLD Log)",
+        "transform": "log",
+    },
+    {
         "key": "silver_ret",
         "source": "yahoo",
         "ticker": "SLV",
         "label": "Silver (SLV, 1D %)",
         "transform": "pct_change",
+    },
+    {
+        "key": "silver_level",
+        "source": "yahoo",
+        "ticker": "SLV",
+        "label": "Silver (SLV Level)",
+        "transform": "level",
+    },
+    {
+        "key": "silver_log",
+        "source": "yahoo",
+        "ticker": "SLV",
+        "label": "Silver (SLV Log)",
+        "transform": "log",
     },
 ]
 
@@ -181,6 +223,8 @@ def _apply_transform(series: pd.Series, transform: str) -> pd.Series:
         return series.pct_change().replace([np.inf, -np.inf], np.nan)
     if transform == "yoy":
         return series.pct_change(12).replace([np.inf, -np.inf], np.nan)
+    if transform == "log":
+        return np.log(series.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan)
     raise ValueError(f"Unknown macro transform: {transform}")
 
 
@@ -272,6 +316,17 @@ def align_macro_to_index(index: pd.Index, lag_days: int = 1) -> pd.DataFrame:
     aligned = df.reindex(pd.to_datetime(index)).ffill()
     if lag_days:
         aligned = aligned.shift(lag_days).ffill()
+    # Derived features for level series (e.g., price levels)
+    level_cols = [col for col in aligned.columns if col.endswith("_level")]
+    for col in level_cols:
+        series = aligned[col].astype(float)
+        for window in (20, 60):
+            rolling_mean = series.rolling(window).mean()
+            rolling_std = series.rolling(window).std()
+            zscore = (series - rolling_mean) / rolling_std
+            aligned[f"{col}_z{window}"] = zscore.replace([np.inf, -np.inf], np.nan)
+            pct_from_ma = (series / rolling_mean - 1.0) * 100.0
+            aligned[f"{col}_pct_ma{window}"] = pct_from_ma.replace([np.inf, -np.inf], np.nan)
     return aligned
 
 

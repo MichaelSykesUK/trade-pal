@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "tradepal"
+version = "0.1.0"
+description = "Full-stack financial analytics app (backend)."
+readme = "README.md"
+packages = [{ include = "backend" }]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "*"
+requests = "*"
+uvicorn = "*"
+pandas = "*"
+yfinance = "*"
+scikit-learn = "*"
+xgboost = "*"
+numpy = "*"
+
+[build-system]
+requires = ["poetry-core>=1.8.0"]
+build-backend = "poetry.core.masonry.api"
