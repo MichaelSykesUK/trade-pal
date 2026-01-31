@@ -26,6 +26,8 @@ export const TIMEFRAMES = [
   { label: 'MAX', value: 'MAX', interval: '1mo' },
 ]
 
+export const SPARKLINE_PERIODS = ['1Y', '6M', '1M']
+
 export const PRICE_OVERLAYS = [
   { key: 'MA50', label: 'MA(50)', color: '#eb4c34' },
   { key: 'MA200', label: 'MA(200)', color: '#1f77b4' },

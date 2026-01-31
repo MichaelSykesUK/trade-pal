@@ -33,8 +33,13 @@ export function saveWatchlist(apiBase, tickers) {
   })
 }
 
-export function fetchSnapshots(apiBase, tickers) {
-  return requestJson(apiBase, '/watchlist_data/batch', {
+export function fetchSnapshots(apiBase, tickers, sparklinePeriod) {
+  const params = new URLSearchParams()
+  if (sparklinePeriod) {
+    params.set('sparkline_period', sparklinePeriod)
+  }
+  const path = params.toString() ? `/watchlist_data/batch?${params.toString()}` : '/watchlist_data/batch'
+  return requestJson(apiBase, path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tickers }),

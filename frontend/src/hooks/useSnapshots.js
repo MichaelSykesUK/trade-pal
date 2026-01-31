@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchSnapshots as fetchSnapshotsApi } from '../api'
 
-export default function useSnapshots({ apiBase, watchlist, bundleReady, marketIndexes }) {
+export default function useSnapshots({ apiBase, watchlist, bundleReady, marketIndexes, sparklinePeriod }) {
   const [snapshots, setSnapshots] = useState({})
   const [batchLoading, setBatchLoading] = useState(false)
   const [batchError, setBatchError] = useState('')
   const snapshotKeyRef = useRef('')
   const snapshotDelayRef = useRef()
   const initialLoadRef = useRef(true)
+  const sparklinePeriodRef = useRef(sparklinePeriod)
 
   const fetchSnapshots = useCallback(async () => {
     const tickers = Array.from(
@@ -17,18 +18,18 @@ export default function useSnapshots({ apiBase, watchlist, bundleReady, marketIn
     setBatchLoading(true)
     setBatchError('')
     try {
-      const data = await fetchSnapshotsApi(apiBase, tickers)
+      const data = await fetchSnapshotsApi(apiBase, tickers, sparklinePeriod)
       setSnapshots(data)
     } catch (err) {
       setBatchError(err.message || 'Unable to load market data.')
     } finally {
       setBatchLoading(false)
     }
-  }, [apiBase, watchlist, marketIndexes])
+  }, [apiBase, watchlist, marketIndexes, sparklinePeriod])
 
   useEffect(() => {
     if (!bundleReady) return
-    const key = watchlist.join(',')
+    const key = `${watchlist.join(',')}|${sparklinePeriod || ''}`
     if (snapshotKeyRef.current === key) {
       return
     }
@@ -36,7 +37,9 @@ export default function useSnapshots({ apiBase, watchlist, bundleReady, marketIn
     if (snapshotDelayRef.current) {
       clearTimeout(snapshotDelayRef.current)
     }
-    const delayMs = initialLoadRef.current ? 3500 : 1400
+    const sparklineChanged = sparklinePeriodRef.current !== sparklinePeriod
+    const delayMs = sparklineChanged ? 200 : initialLoadRef.current ? 3500 : 1400
+    sparklinePeriodRef.current = sparklinePeriod
     snapshotDelayRef.current = setTimeout(() => {
       fetchSnapshots()
       if (initialLoadRef.current) {

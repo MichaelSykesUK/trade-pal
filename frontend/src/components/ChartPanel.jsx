@@ -8,6 +8,9 @@ import ChartLegend from './chart/ChartLegend'
 import ChartToolbar from './chart/ChartToolbar'
 import IndicatorControls from './chart/IndicatorControls'
 
+const FIB_LEVELS = [0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.272, 1.618, 2, 2.618]
+const FIB_RETRACEMENT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]
+
 export default function ChartPanel({
   ticker,
   period,
@@ -38,6 +41,12 @@ export default function ChartPanel({
   const [rightIndicator, setRightIndicator] = useState('macd')
   const [chartType, setChartType] = useState('candles')
   const [patternsActive, setPatternsActive] = useState(false)
+  const [measureActive, setMeasureActive] = useState(false)
+  const [measureInfo, setMeasureInfo] = useState(null)
+  const [fibActive, setFibActive] = useState(false)
+  const [fibInfo, setFibInfo] = useState(null)
+  const [fibRangeActive, setFibRangeActive] = useState(false)
+  const [fibRangeInfo, setFibRangeInfo] = useState(null)
   const [macroOverlayActive, setMacroOverlayActive] = useState(false)
   const [indicatorChartReady, setIndicatorChartReady] = useState(false)
   const barSpacing = useMemo(() => getBarSpacing(period, intervalOverride), [period, intervalOverride])
@@ -82,6 +91,12 @@ export default function ChartPanel({
   )
 
   const patternRef = useRef({ lines: [], markers: [] })
+  const measureRef = useRef({ start: null, end: null, series: null })
+  const fibRef = useRef({ anchor: null, series: null })
+  const fibRangeRef = useRef({ start: null, end: null, series: null })
+  const measureInfoKeyRef = useRef('')
+  const fibInfoKeyRef = useRef('')
+  const fibRangeInfoKeyRef = useRef('')
 
   const clearPatternOverlays = useCallback(() => {
     if (!chartRef.current) return
@@ -155,6 +170,291 @@ export default function ChartPanel({
     },
     [clearPatternOverlays, data.candles],
   )
+
+  const clearMeasureOverlays = useCallback(() => {
+    if (!chartRef.current) return
+    const { chart } = chartRef.current
+    const series = measureRef.current.series
+    if (!chart || !series) return
+    try {
+      chart.removeSeries(series)
+    } catch (_) {}
+    measureRef.current.series = null
+  }, [])
+
+  const resetMeasureState = useCallback(() => {
+    measureRef.current.start = null
+    measureRef.current.end = null
+    measureInfoKeyRef.current = ''
+    setMeasureInfo(null)
+    clearMeasureOverlays()
+  }, [clearMeasureOverlays])
+
+  const ensureMeasureSeries = useCallback(() => {
+    if (!chartRef.current) return null
+    if (measureRef.current.series) return measureRef.current.series
+    const { chart } = chartRef.current
+    if (!chart) return null
+    const series = chart.addLineSeries({
+      color: '#2563eb',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+    measureRef.current.series = series
+    return series
+  }, [])
+
+  const updateMeasureOverlays = useCallback(
+    (startPoint, endPoint) => {
+      if (!startPoint || !endPoint) return
+      const series = ensureMeasureSeries()
+      if (!series) return
+      series.setData([
+        { time: startPoint.time, value: startPoint.price },
+        { time: endPoint.time, value: endPoint.price },
+      ])
+    },
+    [ensureMeasureSeries],
+  )
+
+  const updateMeasureInfo = useCallback((startPoint, endPoint, locked = false) => {
+    if (!startPoint || !endPoint) {
+      measureInfoKeyRef.current = ''
+      setMeasureInfo(null)
+      return
+    }
+    const delta = endPoint.price - startPoint.price
+    const pct = startPoint.price ? (delta / startPoint.price) * 100 : 0
+    const key = [
+      locked ? '1' : '0',
+      Math.round(startPoint.price * 100) / 100,
+      Math.round(endPoint.price * 100) / 100,
+      Math.round(delta * 100) / 100,
+      Math.round(pct * 100) / 100,
+    ].join('|')
+    if (measureInfoKeyRef.current === key) return
+    measureInfoKeyRef.current = key
+    setMeasureInfo({
+      start: startPoint,
+      end: endPoint,
+      delta,
+      pct,
+      locked,
+    })
+  }, [])
+
+  const clearFibOverlays = useCallback(() => {
+    if (!chartRef.current) return
+    const { chart } = chartRef.current
+    const seriesSet = fibRef.current.series
+    if (!chart || !seriesSet) return
+    try {
+      chart.removeSeries(seriesSet.anchor)
+    } catch (_) {}
+    seriesSet.levels.forEach(({ series }) => {
+      try {
+        chart.removeSeries(series)
+      } catch (_) {}
+    })
+    fibRef.current.series = null
+  }, [])
+
+  const resetFibState = useCallback(() => {
+    fibRef.current.anchor = null
+    fibInfoKeyRef.current = ''
+    setFibInfo(null)
+    clearFibOverlays()
+  }, [clearFibOverlays])
+
+  const ensureFibSeries = useCallback(() => {
+    if (!chartRef.current) return null
+    if (fibRef.current.series) return fibRef.current.series
+    const { chart } = chartRef.current
+    if (!chart) return null
+    const anchor = chart.addLineSeries({
+      color: '#f97316',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+    const levels = FIB_LEVELS.filter((level) => level !== 1).map((level) => ({
+      level,
+      series: chart.addLineSeries({
+        color: '#f59e0b',
+        lineWidth: 1,
+        lineStyle: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      }),
+    }))
+    fibRef.current.series = { anchor, levels }
+    return fibRef.current.series
+  }, [])
+
+  const updateFibOverlays = useCallback(
+    (anchorPoint) => {
+      if (!anchorPoint) return
+      if (!data?.candles?.length) return
+      const seriesSet = ensureFibSeries()
+      if (!seriesSet) return
+      const first = data.candles[0]?.time
+      const last = data.candles[data.candles.length - 1]?.time
+      if (!first || !last) return
+      seriesSet.anchor.setData([
+        { time: first, value: anchorPoint.price },
+        { time: last, value: anchorPoint.price },
+      ])
+      seriesSet.levels.forEach(({ level, series }) => {
+        const value = anchorPoint.price * level
+        series.setData([
+          { time: first, value },
+          { time: last, value },
+        ])
+      })
+    },
+    [data?.candles, ensureFibSeries],
+  )
+
+  const updateFibInfo = useCallback((anchorPoint) => {
+    if (!anchorPoint) {
+      fibInfoKeyRef.current = ''
+      setFibInfo(null)
+      return
+    }
+    const levels = FIB_LEVELS.map((level) => ({
+      level,
+      price: anchorPoint.price * level,
+      pct: (level - 1) * 100,
+    }))
+    const key = [
+      Math.round(anchorPoint.price * 100) / 100,
+      ...levels.map((lvl) => Math.round(lvl.price * 100) / 100),
+    ].join('|')
+    if (fibInfoKeyRef.current === key) return
+    fibInfoKeyRef.current = key
+    setFibInfo({
+      anchor: anchorPoint,
+      levels,
+    })
+  }, [])
+
+  const clearFibRangeOverlays = useCallback(() => {
+    if (!chartRef.current) return
+    const { chart } = chartRef.current
+    const seriesSet = fibRangeRef.current.series
+    if (!chart || !seriesSet) return
+    try {
+      chart.removeSeries(seriesSet.trend)
+    } catch (_) {}
+    seriesSet.levels.forEach(({ series }) => {
+      try {
+        chart.removeSeries(series)
+      } catch (_) {}
+    })
+    fibRangeRef.current.series = null
+  }, [])
+
+  const resetFibRangeState = useCallback(() => {
+    fibRangeRef.current.start = null
+    fibRangeRef.current.end = null
+    fibRangeInfoKeyRef.current = ''
+    setFibRangeInfo(null)
+    clearFibRangeOverlays()
+  }, [clearFibRangeOverlays])
+
+  const ensureFibRangeSeries = useCallback(() => {
+    if (!chartRef.current) return null
+    if (fibRangeRef.current.series) return fibRangeRef.current.series
+    const { chart } = chartRef.current
+    if (!chart) return null
+    const trend = chart.addLineSeries({
+      color: '#f97316',
+      lineWidth: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+    const levels = FIB_RETRACEMENT_LEVELS.map((level) => ({
+      level,
+      series: chart.addLineSeries({
+        color: '#f59e0b',
+        lineWidth: 1,
+        lineStyle: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      }),
+    }))
+    fibRangeRef.current.series = { trend, levels }
+    return fibRangeRef.current.series
+  }, [])
+
+  const updateFibRangeOverlays = useCallback(
+    (startPoint, endPoint) => {
+      if (!startPoint || !endPoint) return
+      if (!data?.candles?.length) return
+      const seriesSet = ensureFibRangeSeries()
+      if (!seriesSet) return
+      const first = data.candles[0]?.time
+      const last = data.candles[data.candles.length - 1]?.time
+      if (!first || !last) return
+      seriesSet.trend.setData([
+        { time: startPoint.time, value: startPoint.price },
+        { time: endPoint.time, value: endPoint.price },
+      ])
+      const delta = endPoint.price - startPoint.price
+      seriesSet.levels.forEach(({ level, series }) => {
+        const value = startPoint.price + delta * level
+        series.setData([
+          { time: first, value },
+          { time: last, value },
+        ])
+      })
+    },
+    [data?.candles, ensureFibRangeSeries],
+  )
+
+  const updateFibRangeInfo = useCallback((startPoint, endPoint, locked = false) => {
+    if (!startPoint || !endPoint) {
+      fibRangeInfoKeyRef.current = ''
+      setFibRangeInfo(null)
+      return
+    }
+    const delta = endPoint.price - startPoint.price
+    const pct = startPoint.price ? (delta / startPoint.price) * 100 : 0
+    const levels = FIB_RETRACEMENT_LEVELS.map((level) => ({
+      level,
+      price: startPoint.price + delta * level,
+    }))
+    const key = [
+      locked ? '1' : '0',
+      Math.round(startPoint.price * 100) / 100,
+      Math.round(endPoint.price * 100) / 100,
+      Math.round(delta * 100) / 100,
+      Math.round(pct * 100) / 100,
+      ...levels.map((lvl) => Math.round(lvl.price * 100) / 100),
+    ].join('|')
+    if (fibRangeInfoKeyRef.current === key) return
+    fibRangeInfoKeyRef.current = key
+    setFibRangeInfo({
+      start: startPoint,
+      end: endPoint,
+      delta,
+      pct,
+      levels,
+      locked,
+    })
+  }, [])
+
+  const resolveChartPoint = useCallback((param) => {
+    if (!chartRef.current || !param?.point) return null
+    const { chart, priceSeries } = chartRef.current
+    if (!chart || !priceSeries) return null
+    const time = param.time ?? chart.timeScale().coordinateToTime(param.point.x)
+    if (time == null) return null
+    const price = priceSeries.coordinateToPrice(param.point.y)
+    if (price == null || Number.isNaN(price)) return null
+    return { time, price }
+  }, [])
 
   useEffect(() => {
     if (!containerRef.current || !indicatorContainerRef.current) return
@@ -333,10 +633,149 @@ export default function ChartPanel({
   }, [patternsActive, data.candles, applyPatternOverlays])
 
   useEffect(() => {
+    if (patternsActive) return
+    clearPatternOverlays()
+  }, [patternsActive, clearPatternOverlays])
+
+  useEffect(() => {
     if (!patternsActive) return
     clearPatternOverlays()
     setPatternsActive(false)
   }, [ticker, period, intervalOverride, chartType, clearPatternOverlays])
+
+  useEffect(() => {
+    if (!measureActive) {
+      resetMeasureState()
+    }
+  }, [measureActive, resetMeasureState])
+
+  useEffect(() => {
+    if (!measureActive) return
+    resetMeasureState()
+  }, [ticker, period, intervalOverride, chartType, measureActive, resetMeasureState])
+
+  useEffect(() => {
+    if (!measureActive) return
+    if (!measureRef.current.start || !measureRef.current.end) return
+    updateMeasureOverlays(measureRef.current.start, measureRef.current.end)
+  }, [measureActive, data.candles, updateMeasureOverlays])
+
+  useEffect(() => {
+    if (!measureActive) return
+    if (!chartRef.current) return
+    const { chart } = chartRef.current
+    const handleClick = (param) => {
+      const point = resolveChartPoint(param)
+      if (!point) return
+      if (!measureRef.current.start || measureRef.current.end) {
+        measureRef.current.start = point
+        measureRef.current.end = null
+        updateMeasureOverlays(point, point)
+        updateMeasureInfo(point, point, false)
+        return
+      }
+      measureRef.current.end = point
+      updateMeasureOverlays(measureRef.current.start, point)
+      updateMeasureInfo(measureRef.current.start, point, true)
+    }
+    const handleMove = (param) => {
+      if (!measureRef.current.start || measureRef.current.end) return
+      const point = resolveChartPoint(param)
+      if (!point) return
+      updateMeasureOverlays(measureRef.current.start, point)
+      updateMeasureInfo(measureRef.current.start, point, false)
+    }
+    chart.subscribeClick(handleClick)
+    chart.subscribeCrosshairMove(handleMove)
+    return () => {
+      chart.unsubscribeClick(handleClick)
+      chart.unsubscribeCrosshairMove(handleMove)
+    }
+  }, [measureActive, resolveChartPoint, updateMeasureOverlays, updateMeasureInfo, chartType, darkMode])
+
+  useEffect(() => {
+    if (!fibActive) {
+      resetFibState()
+    }
+  }, [fibActive, resetFibState])
+
+  useEffect(() => {
+    if (!fibActive) return
+    resetFibState()
+  }, [ticker, period, intervalOverride, chartType, fibActive, resetFibState])
+
+  useEffect(() => {
+    if (!fibActive) return
+    if (!fibRef.current.anchor) return
+    updateFibOverlays(fibRef.current.anchor)
+  }, [fibActive, data.candles, updateFibOverlays])
+
+  useEffect(() => {
+    if (!fibActive) return
+    if (!chartRef.current) return
+    const { chart } = chartRef.current
+    const handleClick = (param) => {
+      const point = resolveChartPoint(param)
+      if (!point) return
+      fibRef.current.anchor = point
+      updateFibOverlays(point)
+      updateFibInfo(point)
+    }
+    chart.subscribeClick(handleClick)
+    return () => {
+      chart.unsubscribeClick(handleClick)
+    }
+  }, [fibActive, resolveChartPoint, updateFibOverlays, updateFibInfo, chartType, darkMode])
+
+  useEffect(() => {
+    if (!fibRangeActive) {
+      resetFibRangeState()
+    }
+  }, [fibRangeActive, resetFibRangeState])
+
+  useEffect(() => {
+    if (!fibRangeActive) return
+    resetFibRangeState()
+  }, [ticker, period, intervalOverride, chartType, fibRangeActive, resetFibRangeState])
+
+  useEffect(() => {
+    if (!fibRangeActive) return
+    if (!fibRangeRef.current.start || !fibRangeRef.current.end) return
+    updateFibRangeOverlays(fibRangeRef.current.start, fibRangeRef.current.end)
+  }, [fibRangeActive, data.candles, updateFibRangeOverlays])
+
+  useEffect(() => {
+    if (!fibRangeActive) return
+    if (!chartRef.current) return
+    const { chart } = chartRef.current
+    const handleClick = (param) => {
+      const point = resolveChartPoint(param)
+      if (!point) return
+      if (!fibRangeRef.current.start || fibRangeRef.current.end) {
+        fibRangeRef.current.start = point
+        fibRangeRef.current.end = null
+        updateFibRangeOverlays(point, point)
+        updateFibRangeInfo(point, point, false)
+        return
+      }
+      fibRangeRef.current.end = point
+      updateFibRangeOverlays(fibRangeRef.current.start, point)
+      updateFibRangeInfo(fibRangeRef.current.start, point, true)
+    }
+    const handleMove = (param) => {
+      if (!fibRangeRef.current.start || fibRangeRef.current.end) return
+      const point = resolveChartPoint(param)
+      if (!point) return
+      updateFibRangeOverlays(fibRangeRef.current.start, point)
+      updateFibRangeInfo(fibRangeRef.current.start, point, false)
+    }
+    chart.subscribeClick(handleClick)
+    chart.subscribeCrosshairMove(handleMove)
+    return () => {
+      chart.unsubscribeClick(handleClick)
+      chart.unsubscribeCrosshairMove(handleMove)
+    }
+  }, [fibRangeActive, resolveChartPoint, updateFibRangeOverlays, updateFibRangeInfo, chartType, darkMode])
 
   useEffect(() => {
     if (!chartRef.current) return
@@ -511,6 +950,40 @@ export default function ChartPanel({
   const priceTrendClass =
     priceSummary?.change == null ? '' : priceSummary.change >= 0 ? 'price-up' : 'price-down'
 
+  const formatSignedNumber = (value) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return 'N/A'
+    return `${value >= 0 ? '+' : ''}${formatNumber(value)}`
+  }
+
+  const measureMoveLabel = measureInfo ? formatSignedNumber(measureInfo.delta) : ''
+  const measurePctLabel =
+    measureInfo && typeof measureInfo.pct === 'number'
+      ? `${measureInfo.pct >= 0 ? '+' : ''}${measureInfo.pct.toFixed(2)}%`
+      : ''
+
+  const fibRangeMoveLabel = fibRangeInfo ? formatSignedNumber(fibRangeInfo.delta) : ''
+  const fibRangePctLabel =
+    fibRangeInfo && typeof fibRangeInfo.pct === 'number'
+      ? `${fibRangeInfo.pct >= 0 ? '+' : ''}${fibRangeInfo.pct.toFixed(2)}%`
+      : ''
+  const fibRangeLevelsLabel = fibRangeInfo
+    ? fibRangeInfo.levels
+        .map((level) => `${level.level} ${formatNumber(level.price)}`)
+        .join(' | ')
+    : ''
+  const fibRangeStartLabel = fibRangeInfo?.start ? formatNumber(fibRangeInfo.start.price) : ''
+  const fibRangeEndLabel = fibRangeInfo?.end ? formatNumber(fibRangeInfo.end.price) : ''
+
+  const fibLevelsLabel = fibInfo
+    ? fibInfo.levels
+        .map(
+          (level) =>
+            `${level.level} ${formatNumber(level.price)} (${level.pct >= 0 ? '+' : ''}${level.pct.toFixed(1)}%)`,
+        )
+        .join(' | ')
+    : ''
+  const fibAnchorLabel = fibInfo?.anchor ? formatNumber(fibInfo.anchor.price) : ''
+
   const legendItems = useMemo(() => {
     const items = []
     activeOverlays.forEach((key) => {
@@ -542,6 +1015,39 @@ export default function ChartPanel({
 
   const handleTogglePatterns = useCallback(() => {
     setPatternsActive((prev) => !prev)
+  }, [])
+
+  const handleToggleMeasure = useCallback(() => {
+    setMeasureActive((prev) => {
+      const next = !prev
+      if (next) {
+        setFibActive(false)
+        setFibRangeActive(false)
+      }
+      return next
+    })
+  }, [])
+
+  const handleToggleFib = useCallback(() => {
+    setFibActive((prev) => {
+      const next = !prev
+      if (next) {
+        setMeasureActive(false)
+        setFibRangeActive(false)
+      }
+      return next
+    })
+  }, [])
+
+  const handleToggleFibRange = useCallback(() => {
+    setFibRangeActive((prev) => {
+      const next = !prev
+      if (next) {
+        setMeasureActive(false)
+        setFibActive(false)
+      }
+      return next
+    })
   }, [])
 
   const handleToggleMacroOverlay = useCallback(() => {
@@ -592,6 +1098,12 @@ export default function ChartPanel({
         onToggleOverlay={handleToggleOverlay}
         patternsActive={patternsActive}
         onTogglePatterns={handleTogglePatterns}
+        measureActive={measureActive}
+        onToggleMeasure={handleToggleMeasure}
+        fibActive={fibActive}
+        onToggleFib={handleToggleFib}
+        fibRangeActive={fibRangeActive}
+        onToggleFibRange={handleToggleFibRange}
         macroOverlayActive={macroOverlayActive}
         onToggleMacroOverlay={handleToggleMacroOverlay}
         macroOverlayLabel={macroOverlayLabel}
@@ -603,6 +1115,29 @@ export default function ChartPanel({
       )}
       <div className="chart-container" ref={containerRef}>
         <ChartLegend items={legendItems} />
+        {measureInfo && (
+          <div className={`chart-measure ${measureInfo.delta >= 0 ? 'up' : 'down'}`}>
+            <div className="measure-title">{measureInfo.locked ? 'Measure' : 'Measure (preview)'}</div>
+            <div className="measure-row">{`Move: ${measurePctLabel} (${measureMoveLabel})`}</div>
+          </div>
+        )}
+        {fibRangeInfo && (
+          <div className={`chart-fib-range ${fibRangeInfo.delta >= 0 ? 'up' : 'down'}`}>
+            <div className="measure-title">
+              {fibRangeInfo.locked ? 'Fib 2-Point' : 'Fib 2-Point (preview)'}
+            </div>
+            <div className="measure-row">{`Start: ${fibRangeStartLabel} → End: ${fibRangeEndLabel}`}</div>
+            <div className="measure-row">{`Move: ${fibRangePctLabel} (${fibRangeMoveLabel})`}</div>
+            <div className="measure-row">{`Levels: ${fibRangeLevelsLabel}`}</div>
+          </div>
+        )}
+        {fibInfo && (
+          <div className="chart-fib">
+            <div className="measure-title">Fib Levels</div>
+            <div className="measure-row">{`Anchor: ${fibAnchorLabel}`}</div>
+            <div className="measure-row">{`Levels: ${fibLevelsLabel}`}</div>
+          </div>
+        )}
       </div>
       <IndicatorControls
         leftIndicator={leftIndicator}

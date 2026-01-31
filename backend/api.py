@@ -220,13 +220,13 @@ def indicators(ticker: str, period: str = "1y", interval: str = "1d"):
 
 
 @app.get("/watchlist_data/{ticker}")
-def watchlist_data(ticker: str):
+def watchlist_data(ticker: str, sparkline_period: str = "1Y"):
     """
     Fetch daily & YTD change + company name, with up to 3 retries on YF rate limits.
     Falls back to zeros if still failing.
     """
     try:
-        batch = get_watchlist_batch([ticker])
+        batch = get_watchlist_batch([ticker], sparkline_period=sparkline_period)
         payload = batch.get(ticker)
         if payload:
             return payload
@@ -250,12 +250,12 @@ def watchlist_data(ticker: str):
 
 
 @app.post("/watchlist_data/batch")
-def watchlist_data_batch(payload: WatchlistBatchRequest):
+def watchlist_data_batch(payload: WatchlistBatchRequest, sparkline_period: str = "1Y"):
     tickers = payload.tickers or []
     if not tickers:
         raise HTTPException(status_code=400, detail="Provide at least one ticker.")
     try:
-        return get_watchlist_batch(tickers)
+        return get_watchlist_batch(tickers, sparkline_period=sparkline_period)
     except YFRateLimitError:
         raise HTTPException(
             status_code=503,

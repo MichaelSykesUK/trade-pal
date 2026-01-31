@@ -74,6 +74,12 @@ INDEX_TICKER_LABELS = {
 SPARKLINE_PERIOD = "1y"
 SPARKLINE_INTERVAL = "1wk"
 SPARKLINE_POINTS = 52
+SPARKLINE_PROFILES = {
+    "1Y": {"period": "1y", "interval": "1wk", "points": 52},
+    "6M": {"period": "6mo", "interval": "1wk", "points": 26},
+    "1M": {"period": "1mo", "interval": "1d", "points": 22},
+}
+DEFAULT_SPARKLINE_PROFILE = "1Y"
 
 # Singleflight queue to coalesce identical Yahoo calls across concurrent requests
 _SF_LOCK = Lock()
@@ -85,6 +91,21 @@ def _sf_keyify(v):
     if isinstance(v, (list, tuple, set, frozenset)):
         return tuple(_sf_keyify(x) for x in list(v))
     return v
+
+
+def _normalize_sparkline_period(value: str | None) -> str:
+    if not value:
+        return DEFAULT_SPARKLINE_PROFILE
+    key = str(value).strip().upper().replace(" ", "")
+    if key in SPARKLINE_PROFILES:
+        return key
+    if key in {"6MO", "6MON", "6M"}:
+        return "6M"
+    if key in {"1MO", "1MON", "1M"}:
+        return "1M"
+    if key in {"1YR", "1Y"}:
+        return "1Y"
+    return DEFAULT_SPARKLINE_PROFILE
 
 def _singleflight_run(key: tuple, fn, *args, **kwargs):
     key = _sf_keyify(key)
@@ -1029,18 +1050,23 @@ def _default_watchlist_payload():
     }
 
 
-def _sparkline_from_df(df: pd.DataFrame) -> list[float]:
+def _sparkline_from_df(df: pd.DataFrame, max_points: int = SPARKLINE_POINTS) -> list[float]:
     if df is None or df.empty or "Close" not in df.columns:
         return []
     series = df["Close"].dropna().astype(float).tolist()
     if not series:
         return []
-    if len(series) > SPARKLINE_POINTS:
-        series = series[-SPARKLINE_POINTS:]
+    if max_points and len(series) > max_points:
+        series = series[-max_points:]
     return [float(v) for v in series]
 
 
-def _download_watchlist_sparklines(tickers: list[str]) -> dict[str, list[float]]:
+def _download_watchlist_sparklines(
+    tickers: list[str],
+    period: str = SPARKLINE_PERIOD,
+    interval: str = SPARKLINE_INTERVAL,
+    max_points: int = SPARKLINE_POINTS,
+) -> dict[str, list[float]]:
     if not tickers:
         return {}
     if _cooldown_active():
@@ -1048,8 +1074,8 @@ def _download_watchlist_sparklines(tickers: list[str]) -> dict[str, list[float]]
     try:
         hist = _download_prices(
             tickers,
-            period=SPARKLINE_PERIOD,
-            interval=SPARKLINE_INTERVAL,
+            period=period,
+            interval=interval,
             auto_adjust=False,
             group_by="ticker",
             threads=False,
@@ -1067,7 +1093,7 @@ def _download_watchlist_sparklines(tickers: list[str]) -> dict[str, list[float]]
             subset = process_data(hist.copy(), ticker)
         except Exception:
             subset = pd.DataFrame()
-        spark[ticker] = _sparkline_from_df(subset)
+        spark[ticker] = _sparkline_from_df(subset, max_points=max_points)
     return spark
 
 
@@ -1121,7 +1147,7 @@ def _info_snapshot_for_watchlist(ticker: str) -> tuple[str | None, str | None]:
     return name, exchange
 
 
-def get_watchlist_batch(tickers: list[str]) -> dict:
+def get_watchlist_batch(tickers: list[str], sparkline_period: str | None = None) -> dict:
     """
     Fetch watchlist metrics while batching downloads, caching recent responses,
     and degrading gracefully on rate limits.
@@ -1130,6 +1156,13 @@ def get_watchlist_batch(tickers: list[str]) -> dict:
     clean = [t.strip().upper() for t in tickers if t and t.strip()]
     if not clean:
         return {}
+
+    sparkline_key = _normalize_sparkline_period(sparkline_period)
+    sparkline_profile = SPARKLINE_PROFILES.get(sparkline_key, {
+        "period": SPARKLINE_PERIOD,
+        "interval": SPARKLINE_INTERVAL,
+        "points": SPARKLINE_POINTS,
+    })
 
     if _cooldown_active():
         results = {}
@@ -1190,14 +1223,21 @@ def get_watchlist_batch(tickers: list[str]) -> dict:
     missing_sparklines = []
     for t in clean:
         payload = results.get(t) or {}
-        if "sparkline" not in payload:
+        cached_key = str(payload.get("sparklinePeriod") or payload.get("sparkline_period") or "").upper()
+        if "sparkline" not in payload or cached_key != sparkline_key:
             missing_sparklines.append(t)
 
     if missing_sparklines and not _cooldown_active():
-        spark_payload = _download_watchlist_sparklines(missing_sparklines)
+        spark_payload = _download_watchlist_sparklines(
+            missing_sparklines,
+            period=sparkline_profile.get("period", SPARKLINE_PERIOD),
+            interval=sparkline_profile.get("interval", SPARKLINE_INTERVAL),
+            max_points=sparkline_profile.get("points", SPARKLINE_POINTS),
+        )
         for ticker in missing_sparklines:
             payload = results.get(ticker) or _default_watchlist_payload()
             payload["sparkline"] = spark_payload.get(ticker, [])
+            payload["sparklinePeriod"] = sparkline_key
             results[ticker] = payload
             WATCHLIST_CACHE[ticker] = (time.time(), payload)
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { API_BASE } from './config'
-import { DEFAULT_TICKER, DEFAULT_WATCHLIST, MARKET_INDEXES, TIMEFRAMES } from './constants'
+import { DEFAULT_TICKER, DEFAULT_WATCHLIST, MARKET_INDEXES, SPARKLINE_PERIODS, TIMEFRAMES } from './constants'
 import ChartPanel from './components/ChartPanel'
 import Header from './components/Header'
 import KpiTable from './components/KpiTable'
@@ -23,6 +23,7 @@ function App() {
   const [selectedTicker, setSelectedTicker] = useState(DEFAULT_TICKER)
   const [period, setPeriod] = useState('1Y')
   const [intervalOverride, setIntervalOverride] = useState(null)
+  const [sparklinePeriod, setSparklinePeriod] = useState(SPARKLINE_PERIODS[0] || '1Y')
   const { darkMode, setDarkMode } = useTheme()
 
   const baseInterval = useMemo(
@@ -48,7 +49,16 @@ function App() {
     watchlist,
     bundleReady,
     marketIndexes: MARKET_INDEXES,
+    sparklinePeriod,
   })
+
+  const handleSparklinePeriodToggle = () => {
+    setSparklinePeriod((prev) => {
+      const idx = SPARKLINE_PERIODS.indexOf(prev)
+      const nextIdx = idx === -1 ? 0 : (idx + 1) % SPARKLINE_PERIODS.length
+      return SPARKLINE_PERIODS[nextIdx] || '1Y'
+    })
+  }
 
   const {
     mlSeries,
@@ -143,6 +153,8 @@ function App() {
           onSelect={(symbol) => setSelectedTicker(symbol)}
           onRemove={handleRemoveWatchlist}
           onRefresh={fetchSnapshots}
+          sparklinePeriod={sparklinePeriod}
+          onSparklinePeriodToggle={handleSparklinePeriodToggle}
           screenerLoading={screenerLoading}
           screenerError={screenerError}
           screenerMetric={screenerMetric}

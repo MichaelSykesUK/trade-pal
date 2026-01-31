@@ -7,6 +7,12 @@ export default function ChartToolbar({
   onToggleOverlay,
   patternsActive,
   onTogglePatterns,
+  measureActive,
+  onToggleMeasure,
+  fibActive,
+  onToggleFib,
+  fibRangeActive,
+  onToggleFibRange,
   macroOverlayActive,
   onToggleMacroOverlay,
   macroOverlayLabel,
@@ -44,6 +50,30 @@ export default function ChartToolbar({
         onClick={onTogglePatterns}
       >
         Patterns
+      </button>
+      <button
+        type="button"
+        className={`secondary-btn ${measureActive ? 'active' : ''}`}
+        onClick={onToggleMeasure}
+        title="Measure move between two points"
+      >
+        Measure
+      </button>
+      <button
+        type="button"
+        className={`secondary-btn ${fibActive ? 'active' : ''}`}
+        onClick={onToggleFib}
+        title="Click a point to anchor fib levels"
+      >
+        Fib
+      </button>
+      <button
+        type="button"
+        className={`secondary-btn ${fibRangeActive ? 'active' : ''}`}
+        onClick={onToggleFibRange}
+        title="Click two points to draw retracement levels"
+      >
+        Fib 2-Point
       </button>
       <button
         type="button"

@@ -18,6 +18,8 @@ export default function Sidebar({
   onScreenerMetricChange,
   onScreenerLoad,
   onOpenScreener,
+  sparklinePeriod = '1Y',
+  onSparklinePeriodToggle,
 }) {
   return (
     <aside id="left-pane">
@@ -33,7 +35,16 @@ export default function Sidebar({
         <div className="item-header">
           <span>Ticker</span>
           <span>Price</span>
-          <span>1Y</span>
+          <span className="sparkline-header">
+            <button
+              type="button"
+              className="sparkline-toggle"
+              onClick={() => onSparklinePeriodToggle?.()}
+              title="Toggle sparkline range"
+            >
+              {sparklinePeriod}
+            </button>
+          </span>
           <span>Daily</span>
           <span>YTD</span>
           <span></span>
@@ -69,7 +80,16 @@ export default function Sidebar({
         <div className="item-header">
           <span>Ticker</span>
           <span>Price</span>
-          <span>1Y</span>
+          <span className="sparkline-header">
+            <button
+              type="button"
+              className="sparkline-toggle"
+              onClick={() => onSparklinePeriodToggle?.()}
+              title="Toggle sparkline range"
+            >
+              {sparklinePeriod}
+            </button>
+          </span>
           <span>Daily</span>
           <span>YTD</span>
           <span></span>
