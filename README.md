@@ -25,11 +25,11 @@ poetry install
 
 ### Frontend (Vite)
 ```bash
-cd frontend-vite
+cd frontend
 npm install
 ```
 If your backend does **not** run on `http://localhost:8000`, add a `.env.local`
-file under `frontend-vite/` with:
+file under `frontend/` with:
 ```
 VITE_API_BASE=https://your-api-host
 ```
@@ -64,7 +64,7 @@ It prints progress while waiting and logs server output to
 If you prefer two terminals, you can still run:
 ```bash
 poetry run uvicorn backend.api:app --reload --port 8000
-cd frontend-vite && npm run dev
+cd frontend && npm run dev
 ```
 
 - Backend API: `http://127.0.0.1:8000`
@@ -90,7 +90,7 @@ The frontend talks to the backend through REST calls; keep both processes runnin
 │   ├── ml.py               # Machine learning models and logic
 │   └── requirements.txt    # Python dependencies
 │
-├── frontend-vite/
+├── frontend/
 │   ├── src/                # React app source
 │   ├── index.html          # Vite entry
 │   └── vite.config.js      # Vite config

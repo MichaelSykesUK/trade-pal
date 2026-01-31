@@ -33,7 +33,7 @@ kill_port "$FRONT_PORT"
 ( cd "$ROOT_DIR" && poetry run uvicorn backend.api:app --reload --port "$BACK_PORT" ) &
 BACK_PID=$!
 
-( cd "$ROOT_DIR/frontend-vite" && VITE_API_BASE="http://localhost:${BACK_PORT}" npm run dev -- --host 127.0.0.1 --port "$FRONT_PORT" --strictPort ) &
+( cd "$ROOT_DIR/frontend" && VITE_API_BASE="http://localhost:${BACK_PORT}" npm run dev -- --host 127.0.0.1 --port "$FRONT_PORT" --strictPort ) &
 FRONT_PID=$!
 
 trap 'kill $BACK_PID $FRONT_PID 2>/dev/null || true' EXIT

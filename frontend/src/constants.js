@@ -5,6 +5,14 @@ export const MARKET_INDEXES = [
   { ticker: '^GSPC', label: 'S&P 500' },
   { ticker: '^IXIC', label: 'Nasdaq Composite' },
   { ticker: '^DJI', label: 'Dow Jones Industrial Average' },
+  { ticker: '^FTSE', label: 'FTSE 100' },
+  { ticker: '^N225', label: 'Nikkei 225' },
+  { ticker: 'GC=F', label: 'Gold' },
+  { ticker: 'SI=F', label: 'Silver' },
+  { ticker: 'PL=F', label: 'Platinum' },
+  { ticker: 'PA=F', label: 'Palladium' },
+  { ticker: 'BTC-USD', label: 'Bitcoin' },
+  { ticker: 'ETH-USD', label: 'Ethereum' },
 ]
 
 export const TIMEFRAMES = [

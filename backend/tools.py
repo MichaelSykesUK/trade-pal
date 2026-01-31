@@ -71,6 +71,10 @@ INDEX_TICKER_LABELS = {
     "^DJI": ("Dow Jones Industrial Average", "Index"),
 }
 
+SPARKLINE_PERIOD = "1y"
+SPARKLINE_INTERVAL = "1wk"
+SPARKLINE_POINTS = 52
+
 # Singleflight queue to coalesce identical Yahoo calls across concurrent requests
 _SF_LOCK = Lock()
 _SF_WAIT: dict[tuple, dict] = {}
@@ -1021,7 +1025,50 @@ def _default_watchlist_payload():
         "dailyPct": 0.0,
         "ytdChange": 0.0,
         "ytdPct": 0.0,
+        "sparkline": [],
     }
+
+
+def _sparkline_from_df(df: pd.DataFrame) -> list[float]:
+    if df is None or df.empty or "Close" not in df.columns:
+        return []
+    series = df["Close"].dropna().astype(float).tolist()
+    if not series:
+        return []
+    if len(series) > SPARKLINE_POINTS:
+        series = series[-SPARKLINE_POINTS:]
+    return [float(v) for v in series]
+
+
+def _download_watchlist_sparklines(tickers: list[str]) -> dict[str, list[float]]:
+    if not tickers:
+        return {}
+    if _cooldown_active():
+        return {t: [] for t in tickers}
+    try:
+        hist = _download_prices(
+            tickers,
+            period=SPARKLINE_PERIOD,
+            interval=SPARKLINE_INTERVAL,
+            auto_adjust=False,
+            group_by="ticker",
+            threads=False,
+        )
+    except (YFRateLimitError, ValueError):
+        _start_yf_cooldown()
+        return {t: [] for t in tickers}
+
+    if isinstance(hist, pd.Series):
+        hist = hist.to_frame().T
+
+    spark = {}
+    for ticker in tickers:
+        try:
+            subset = process_data(hist.copy(), ticker)
+        except Exception:
+            subset = pd.DataFrame()
+        spark[ticker] = _sparkline_from_df(subset)
+    return spark
 
 
 def _compute_watchlist_payload(df: pd.DataFrame) -> dict:
@@ -1139,6 +1186,20 @@ def get_watchlist_batch(tickers: list[str]) -> dict:
 
     for t in clean:
         results.setdefault(t, _default_watchlist_payload())
+
+    missing_sparklines = []
+    for t in clean:
+        payload = results.get(t) or {}
+        if "sparkline" not in payload:
+            missing_sparklines.append(t)
+
+    if missing_sparklines and not _cooldown_active():
+        spark_payload = _download_watchlist_sparklines(missing_sparklines)
+        for ticker in missing_sparklines:
+            payload = results.get(ticker) or _default_watchlist_payload()
+            payload["sparkline"] = spark_payload.get(ticker, [])
+            results[ticker] = payload
+            WATCHLIST_CACHE[ticker] = (time.time(), payload)
 
     if results:
         _persist_watchlist_cache()

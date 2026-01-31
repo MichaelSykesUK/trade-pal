@@ -979,7 +979,7 @@ body {
 
 .item-header {
   display: grid;
-  grid-template-columns: 56px minmax(48px, 1fr) minmax(48px, 1fr) minmax(48px, 1fr) 28px;
+  grid-template-columns: 56px minmax(48px, 1fr) 72px minmax(48px, 1fr) minmax(48px, 1fr) 28px;
   font-weight: 600;
   font-size: 11px;
   color: #6b7280;
@@ -996,6 +996,9 @@ body {
 }
 .item-header span:first-child {
   text-align: left;
+}
+.item-header span:nth-child(3) {
+  text-align: center;
 }
 .item-header span:last-child {
   text-align: center;
@@ -1274,7 +1277,7 @@ body {
 /* We'll do row1 as a grid to fit Ticker, Price, Daily, YTD, Remove X in one row */
 .item-row1 {
   display: grid;
-  grid-template-columns: 56px minmax(48px, 1fr) minmax(48px, 1fr) minmax(48px, 1fr) 28px;
+  grid-template-columns: 56px minmax(48px, 1fr) 72px minmax(48px, 1fr) minmax(48px, 1fr) 28px;
   align-items: center;
   gap: 4px;
   margin-bottom: 2px;
@@ -1284,6 +1287,11 @@ body {
 }
 .item-col-price {
   text-align: right;
+}
+.item-col-sparkline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .item-col-daily {
   text-align: right;
@@ -1336,6 +1344,20 @@ body {
   font-size: 11px;
   color: #666;
   margin: 0;
+}
+
+.sparkline {
+  width: 72px;
+  height: 24px;
+  display: block;
+}
+.sparkline-empty {
+  font-size: 10px;
+  color: #9ca3af;
+  text-align: center;
+}
+[data-theme='dark'] .sparkline-empty {
+  color: #94a3b8;
 }
 
 /* The remove watchlist "X" is inline in the last grid column */

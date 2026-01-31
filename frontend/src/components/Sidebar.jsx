@@ -33,6 +33,7 @@ export default function Sidebar({
         <div className="item-header">
           <span>Ticker</span>
           <span>Price</span>
+          <span>1Y</span>
           <span>Daily</span>
           <span>YTD</span>
           <span></span>
@@ -68,6 +69,7 @@ export default function Sidebar({
         <div className="item-header">
           <span>Ticker</span>
           <span>Price</span>
+          <span>1Y</span>
           <span>Daily</span>
           <span>YTD</span>
           <span></span>

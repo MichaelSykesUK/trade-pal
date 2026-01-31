@@ -1,4 +1,5 @@
 import { formatNumber } from '../utils/format'
+import Sparkline from './Sparkline'
 
 export default function WatchlistRow({ ticker, data, subtitle, extraActions }) {
   const payload =
@@ -9,7 +10,9 @@ export default function WatchlistRow({ ticker, data, subtitle, extraActions }) {
       dailyPct: 0,
       ytdChange: 0,
       ytdPct: 0,
+      sparkline: [],
     }
+  const sparklineValues = Array.isArray(payload.sparkline) ? payload.sparkline : []
   const secondaryLine = subtitle
     ? subtitle
     : [data?.companyName, data?.exchange].filter(Boolean).join(' · ') || payload.companyName || 'Unknown'
@@ -21,6 +24,9 @@ export default function WatchlistRow({ ticker, data, subtitle, extraActions }) {
       <div className="item-row1">
         <div className="item-col-ticker">{ticker}</div>
         <div className="item-col-price">{formatNumber(payload.currentPrice)}</div>
+        <div className="item-col-sparkline">
+          <Sparkline values={sparklineValues} />
+        </div>
         <div className={`item-col-daily ${payload.dailyChange >= 0 ? 'up' : 'down'}`}>
           {`${dailySign}${formatNumber(payload.dailyChange)} (${dailySign}${formatNumber(payload.dailyPct)}%)`}
         </div>
